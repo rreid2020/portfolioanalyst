@@ -55,6 +55,11 @@ def _canadian_dividend_stock(position) -> bool:
     return position["Ticker"].endswith(CANADIAN_SUFFIXES) and position["Country"] == "Canada"
 
 
+def _mask(rows: pd.DataFrame, test) -> pd.Series:
+    """Boolean Series of test(row); DataFrame.apply returns a frame when rows is empty."""
+    return pd.Series([bool(test(r)) for r in rows.to_dict("records")], index=rows.index, dtype=bool)
+
+
 def placement_hints(figures, dividends) -> list:
     """Hints for the holdings' accounts, given per-position dividend income."""
     if dividends is None or figures.positions.empty or dividends.rows.empty:
@@ -69,7 +74,7 @@ def placement_hints(figures, dividends) -> list:
     for account, group in rows.groupby("Account", sort=False):
         payers = group[group["Annual income"] > 0]
         if account in NO_US_RELIEF:
-            us = payers[payers.apply(_us_listed, axis=1)]
+            us = payers[_mask(payers, _us_listed)]
             if not us.empty:
                 lost = float(us["Annual income"].sum() * US_WITHHOLDING)
                 tickers = list(us["Ticker"])
@@ -88,7 +93,7 @@ def placement_hints(figures, dividends) -> list:
                 ))
         if account in TREATY_EXEMPT:
             canadian = payers[
-                payers.apply(_canadian_dividend_stock, axis=1) & (payers["Yield %"] >= CANADIAN_DIVIDEND_MIN_YIELD)
+                _mask(payers, _canadian_dividend_stock) & (payers["Yield %"] >= CANADIAN_DIVIDEND_MIN_YIELD)
             ]
             if not canadian.empty:
                 tickers = list(canadian["Ticker"])

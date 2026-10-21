@@ -18,6 +18,7 @@ import brokerage_sync
 import dashboard
 import portfolio_analytics
 import portfolio_metrics
+import rebalance
 import report
 from portfolio_import import ACCOUNT_TYPES, COLUMNS, normalize_account, read_holdings, template_csv
 
@@ -63,7 +64,11 @@ actionable report. For every portfolio you receive, you should:
 5. Call out risk flags: over-concentration in a single ticker or
    sector, high P/E relative to peers, recent negative news, or
    weak analyst sentiment. Use DuckDuckGoTools when you need broader
-   market context that YFinance does not cover.
+   market context that YFinance does not cover. When the message
+   includes a proposed rebalance (the user's own
+   targets), comment on it: whether the trades fit the risk and
+   concentration picture, tax or account considerations, and anything to
+   check before trading. Don't invent different trades.
 6. Finish with a short "Recommendations" section: 3-5 bullet points
    on rebalancing ideas, positions worth trimming, and positions
    worth adding to. Be specific but always remind the user this is
@@ -198,7 +203,9 @@ def parse_portfolio(rows):
     return holdings
 
 
-def format_prompt(holdings, question: str, figures=None, performance=None, dividends=None, hints=None) -> str:
+def format_prompt(
+    holdings, question: str, figures=None, performance=None, dividends=None, hints=None, rebalance_plan=None
+) -> str:
     lines = ["Here is my current stock portfolio:", ""]
     lines.append("| Ticker | Shares | Avg Buy Price | Currency | Account |")
     lines.append("|--------|--------|---------------|----------|---------|")
@@ -215,6 +222,8 @@ def format_prompt(holdings, question: str, figures=None, performance=None, divid
         lines += ["", portfolio_analytics.to_markdown(performance, dividends)]
     if figures is not None and not figures.positions.empty:
         lines += ["", account_hints.to_markdown(figures, dividends, hints or [])]
+    if rebalance_plan is not None:
+        lines += ["", rebalance.to_markdown(rebalance_plan)]
     lines.append("")
     lines.append(question.strip() or "Analyze my portfolio end-to-end.")
     return "\n".join(lines)
@@ -438,10 +447,11 @@ def main() -> None:
     holdings = parse_portfolio(edited.to_dict("records"))
     figures = performance = dividends = None
     hints = []
+    rebalance_plan = None
     if holdings:
         with st.spinner("Fetching live prices..."):
             figures = dashboard.load_figures(holdings, base)
-        performance, dividends, hints = dashboard.render(figures)
+        performance, dividends, hints, rebalance_plan = dashboard.render(figures)
 
     question = st.text_area(
         "What would you like the analyst to focus on?",
@@ -460,7 +470,7 @@ def main() -> None:
             st.error("AI_GATEWAY_API_KEY is missing.")
             return
 
-        prompt = format_prompt(holdings, question, figures, performance, dividends, hints)
+        prompt = format_prompt(holdings, question, figures, performance, dividends, hints, rebalance_plan)
         st.session_state.pop("analysis", None)
         st.session_state.chat = []
 

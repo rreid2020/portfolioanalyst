@@ -109,6 +109,12 @@ class HintsTest(unittest.TestCase):
         self.assertIn("BNS.TO 5.0%", rrsp.detail)
         self.assertIn("in an RRSP", rrsp.detail)
 
+    def test_accounts_without_payers_give_no_hints(self):
+        # Regression: an RRSP with only non-payers once crashed placement_hints.
+        figures = portfolio_metrics.compute([holding("SHOP.TO", 10, "RRSP"), holding("AAPL", 1, "TFSA")], QUOTES, {"CAD": 1.0, "USD": 1.4}, "CAD")
+        history = make_history({"SHOP.TO": flat(100), "AAPL": flat(200), "USDCAD=X": flat(1.4), **BENCH})
+        self.assertEqual(account_hints.placement_hints(figures, pa.compute_dividends(figures, history)), [])
+
     def test_no_hints_without_dividends_or_accounts(self):
         self.assertEqual(account_hints.placement_hints(self.figures, None), [])
         figures = portfolio_metrics.compute([holding("SHOP.TO", 1, None)], QUOTES, {"CAD": 1.0}, "CAD")

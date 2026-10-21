@@ -13,6 +13,7 @@ Adapted from [`simple_ai_agents/stock_portfolio_analyst`](https://github.com/Ari
 - **Canadian accounts**: an Account column (TFSA, RRSP, FHSA, RRIF, RESP, RDSP, LIRA, Non-registered), filled in from CSV imports and brokerage connections; per-account value, P/L and dividend totals, and placement hints such as US dividends losing 15% withholding in a TFSA or FHSA (general rules, not tax advice)
 - **Performance & risk**: a backtest of today's holdings over 1 month to 5 years against a benchmark (XIC, XEQT, S&P 500 or Nasdaq 100), in CAD or USD at daily FX with dividends reinvested; return, annualized volatility, beta, max drawdown, and a correlation heatmap of your holdings
 - **Dividend income**: trailing 12-month dividends per holding, portfolio yield and expected annual income in your report currency
+- **Rebalancing calculator**: set target weights by holding (including ones you don't own yet), sector or currency, for all accounts or one; add new cash; choose buy-only (no selling, cash goes to the most underweight first) and fractional or whole shares. Shows the trades, before/after weights, cash left and an estimated capital gain on non-registered sales. Informational only; no orders are placed
 - **Verified numbers for the analyst**: the computed figures go into the analyst's prompt, so the report quotes them instead of doing its own arithmetic
 - **Streaming report**: the analyst's review appears as it's written, with each data lookup (fundamentals, news, web search) listed in a status box
 - **Follow-up chat**: ask questions about the report ("what if I sold half my NVDA?"); the analyst keeps the report and figures in context
@@ -113,7 +114,7 @@ The **Connect brokerage** panel loads your current positions straight from your 
    SNAPTRADE_KEY_TYPE=commercial
    ```
 
-3. Restart the app, open **🔗 Connect brokerage**, click **Open connection portal**, then **Sign in to your brokerage ↗**. The link expires after 5 minutes.
+3. Restart the app, open **Connect brokerage**, click **Open connection portal**, then **Sign in to your brokerage ↗**. The link expires after 5 minutes.
 4. When the brokerage is connected, SnapTrade sends that tab back to the app. Click **Load holdings** there. This replaces the holdings table with one row per ticker per account, labelled with the account type (TFSA, RRSP, ...) from SnapTrade.
 
 Stocks, ETFs, ADRs and closed-end funds are loaded. Canadian listings get yfinance suffixes (`SHOP` on TSX → `SHOP.TO`, `RCI.B` → `RCI-B.TO`), the same way CSV import does. Options, crypto, bonds and mutual funds are skipped with a note, because yfinance can't price them by ticker. Paper accounts are ignored.
@@ -148,9 +149,10 @@ Positions are read with `get_all_account_positions`. SnapTrade's older `get_user
 1. In the **Your Holdings** table, add one row per position: `Ticker`, `Shares`, `Avg Buy Price`, `Currency`, and optionally `Account` (TFSA, RRSP, FHSA...). Or fill it from **Import from CSV or Excel** or **Connect brokerage**.
 2. Optionally tweak the focus question (e.g. _"Assess my tech concentration risk"_ or _"Which position looks most overvalued?"_).
 3. Check the **Dashboard** below the table: totals, allocation, gains and losses, performance and risk against a benchmark, dividend income, and every position. The performance figures value today's holdings over the chosen period, so they show how this mix would have done rather than your actual returns. Pick CAD or USD under **Report currency** in the sidebar. A blank `Currency` means the average buy price is in the currency the ticker trades in.
-4. Click **Analyze portfolio**.
-5. Read the report as it streams in: holdings table with live prices and P/L, portfolio-level metrics, risk flags, and 3–5 rebalancing recommendations.
-6. Ask follow-up questions in the box under the report, and download it as Markdown or HTML (open the HTML file and print it to save a PDF). The report and conversation last for the browser session.
+4. Optionally, open **Rebalance** to plan trades toward target weights. Pick one account for trades you can place with that account's cash. The analyst comments on the plan if one is set.
+5. Click **Analyze portfolio**.
+6. Read the report as it streams in: holdings table with live prices and P/L, portfolio-level metrics, risk flags, and 3–5 rebalancing recommendations.
+7. Ask follow-up questions in the box under the report, and download it as Markdown or HTML (open the HTML file and print it to save a PDF). The report and conversation last for the browser session.
 
 ## 🧪 Tests
 

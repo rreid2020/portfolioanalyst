@@ -6,6 +6,7 @@ import streamlit as st
 import account_hints
 import portfolio_analytics
 import portfolio_metrics
+import rebalance
 
 # Validated with the dataviz palette checker: both clear the chroma floor and
 # stay apart under every colour-vision deficiency (worst ΔE 17).
@@ -364,8 +365,148 @@ def dividends_tab(figures, dividends):
         st.info("None of these holdings paid a dividend in the past 12 months.")
 
 
+def _new_holding_rows(rows, wanted, base):
+    """Add holdings typed into the targets table that aren't owned yet. Returns (rows, unknown)."""
+    unknown = []
+    for ticker in wanted:
+        quote = _quotes((ticker,)).get(ticker)
+        if quote is None:
+            unknown.append(ticker)
+            continue
+        price, currency = portfolio_metrics.normalize(quote.price, quote.currency)
+        fx = _fx(tuple(sorted({currency, base})), base).get(currency)
+        if fx is None:
+            unknown.append(ticker)
+            continue
+        rows = rebalance.add_holding(rows, ticker, price, currency, fx)
+    return rows, unknown
+
+
+def rebalance_tab(figures):
+    """Targets editor and the trades that reach them. Returns the Plan when it has trades."""
+    base = figures.base
+    accounts = [a for a in dict.fromkeys(figures.positions["Account"]) if a != portfolio_metrics.UNSPECIFIED_ACCOUNT]
+    controls = st.columns([3, 2, 2])
+    group_by = controls[0].segmented_control(
+        "Set targets by", list(rebalance.GROUPINGS), default="Holding", key="rebalance_group"
+    ) or "Holding"
+    scope = controls[1].selectbox(
+        "Account",
+        [rebalance.ALL_ACCOUNTS, *accounts],
+        key="rebalance_scope",
+        help="Pick one account to get trades you can place with that account's cash.",
+    )
+    cash = controls[2].number_input(f"New cash ({base})", min_value=0.0, value=0.0, step=100.0, key="rebalance_cash")
+    toggles = st.container(horizontal=True)
+    buy_only = toggles.toggle("Buy only (no selling)", key="rebalance_buy_only",
+                              help="Spend the new cash on the most underweight positions first. Nothing is sold.")
+    fractional = toggles.toggle("Fractional shares", value=True, key="rebalance_fractional",
+                                help="Wealthsimple and some other brokers trade fractions of a share.")
+
+    if scope == rebalance.ALL_ACCOUNTS:
+        positions = figures.by_ticker()
+    else:
+        positions = figures.positions[figures.positions["Account"] == scope]
+    rows = rebalance.universe(positions, rebalance.GROUPINGS[group_by])
+    current = rows.groupby("Group", sort=False)["Value"].sum()
+    exact = current / current.sum() * 100
+    weights = exact.round(1)
+    table = pd.DataFrame({"Group": weights.index, "Current %": weights.values, "Target %": weights.values})
+
+    st.caption(
+        "Targets start at your current weights. Change them"
+        + (", or add a row for a holding you don't own yet" if group_by == "Holding" else "")
+        + "; they're scaled to 100% if they don't add up."
+    )
+    edited = st.data_editor(
+        table,
+        key=f"rebalance_targets_{group_by}_{scope}",
+        hide_index=True,
+        width="stretch",
+        num_rows="dynamic" if group_by == "Holding" else "fixed",
+        disabled=["Current %"],
+        column_config={
+            "Group": st.column_config.TextColumn("Ticker" if group_by == "Holding" else group_by, required=True),
+            "Current %": st.column_config.NumberColumn(format="%.1f"),
+            "Target %": st.column_config.NumberColumn(min_value=0.0, max_value=100.0, step=0.5, format="%.1f"),
+        },
+    )
+    edited = edited.dropna(subset=["Group"])
+    edited["Group"] = edited["Group"].astype(str).str.strip()
+    if group_by == "Holding":
+        edited["Group"] = edited["Group"].str.upper()
+    edited = edited[edited["Group"] != ""]
+    targets = dict(zip(edited["Group"], edited["Target %"].fillna(0.0)))
+    # A target left at its (rounded) current weight means "keep it": use the exact
+    # weight, so rounding alone doesn't produce trades.
+    for group, target in targets.items():
+        if group in weights.index and abs(target - weights[group]) < 1e-9:
+            targets[group] = exact[group]
+
+    unknown = []
+    if group_by == "Holding":
+        new = [t for t in targets if t not in set(rows["Group"]) and targets[t] > 0]
+        rows, unknown = _new_holding_rows(rows, new, base)
+    if unknown:
+        st.warning(f"No live price for {', '.join(unknown)}; left out of the plan.")
+
+    plan = rebalance.plan(rows, targets, cash, buy_only, fractional, base, group_by, scope)
+    if plan.targets_scaled_from is not None:
+        st.info(f"Targets added up to {plan.targets_scaled_from:.1f}%, so they were scaled to 100%.")
+    if not plan.has_trades:
+        st.info("Already on target. Change a target or add new cash to see trades.")
+        return None
+
+    tiles = st.columns(4 if plan.realized_gain else 3)
+    tiles[0].metric(f"Buys ({base})", f"{plan.total_buys:,.0f}", border=True)
+    tiles[1].metric(f"Sells ({base})", f"{plan.total_sells:,.0f}", border=True)
+    tiles[2].metric(f"Cash left ({base})", f"{plan.cash_left:,.0f}", border=True,
+                    help="New cash plus sale proceeds not spent, e.g. from rounding to whole shares.")
+    if plan.realized_gain:
+        tiles[3].metric(f"Est. capital gain ({base})", f"{plan.realized_gain:,.0f}", border=True,
+                        help="Gain realized by sales in non-registered accounts, from your average cost. Half is taxable.")
+
+    st.markdown("**Trades**")
+    st.dataframe(
+        plan.trades.assign(Amount=plan.trades["Amount"].abs()),
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "Shares": st.column_config.NumberColumn(format="%g"),
+            "Price": st.column_config.NumberColumn(format="%.2f", help="Latest price, in the listing currency"),
+            "Amount": st.column_config.NumberColumn(f"Amount ({base})", format="accounting"),
+            "Current %": st.column_config.NumberColumn(format="%.1f%%"),
+            "After %": st.column_config.NumberColumn(format="%.1f%%"),
+        },
+    )
+    if group_by != "Holding":
+        st.markdown(f"**By {group_by.lower()}**")
+        st.dataframe(
+            plan.groups,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "Group": st.column_config.TextColumn(group_by),
+                "Current %": st.column_config.NumberColumn(format="%.1f%%"),
+                "Target %": st.column_config.NumberColumn(format="%.1f%%"),
+                "After %": st.column_config.NumberColumn(format="%.1f%%"),
+                "Change": st.column_config.NumberColumn(f"Change ({base})", format="accounting"),
+            },
+        )
+    notes = ["Informational only: no orders are placed, and prices can move before you trade."]
+    if scope == rebalance.ALL_ACCOUNTS and len(accounts) > 1 and plan.total_sells > 0:
+        notes.append(
+            "Across all accounts, a sale in one account can't pay for a buy in another without a withdrawal. "
+            "Pick one account above to get trades you can place."
+        )
+    if plan.realized_gain:
+        notes.append("Selling at a gain in a non-registered account is a taxable disposition.")
+    st.caption(" ".join(notes))
+    return plan
+
+
 def render(figures):
-    """Draw the dashboard. Returns (Performance or None, Dividends or None, hints) for the analyst."""
+    """Draw the dashboard. Returns (Performance, Dividends, hints, rebalance Plan), any may be None/empty."""
     base = figures.base
     st.subheader("Dashboard")
     note = "Live Yahoo Finance quotes, which can be delayed up to 15 minutes; refreshed every 5 minutes."
@@ -376,7 +517,7 @@ def render(figures):
     if figures.unpriced:
         st.warning(f"No live price for {', '.join(figures.unpriced)}; left out of the totals. Check the ticker symbols.")
     if figures.positions.empty:
-        return None, None, []
+        return None, None, [], None
 
     tiles = st.columns(4)
     tiles[0].metric(f"Market value ({base})", _money(figures.total_value), border=True)
@@ -395,8 +536,8 @@ def render(figures):
     history = _history(tuple(portfolio_analytics.history_symbols(figures.positions, base)))
     dividends = portfolio_analytics.compute_dividends(figures, history)
     hints = account_hints.placement_hints(figures, dividends)
-    allocation_tab, pl_tab, accounts_tab_, performance_tab_, dividends_tab_, positions_tab = st.tabs(
-        ["Allocation", "Gain / loss", "Accounts", "Performance & risk", "Dividends", "Positions"]
+    allocation_tab, pl_tab, accounts_tab_, performance_tab_, dividends_tab_, rebalance_tab_, positions_tab = st.tabs(
+        ["Allocation", "Gain / loss", "Accounts", "Performance & risk", "Dividends", "Rebalance", "Positions"]
     )
     with allocation_tab:
         view = st.segmented_control(
@@ -420,6 +561,8 @@ def render(figures):
         performance = performance_tab(figures, history)
     with dividends_tab_:
         dividends_tab(figures, dividends)
+    with rebalance_tab_:
+        plan = rebalance_tab(figures)
     with positions_tab:
         st.dataframe(
             figures.positions,
@@ -436,4 +579,4 @@ def render(figures):
                 "Weight %": st.column_config.NumberColumn(format="%.1f%%"),
             },
         )
-    return performance, dividends, hints
+    return performance, dividends, hints, plan
