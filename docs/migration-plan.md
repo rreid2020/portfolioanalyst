@@ -104,7 +104,7 @@ a reload, which Streamlit session state never did.
 | Math | pandas/numpy: returns, volatility, beta, drawdown, correlation, water-fill rebalancing. ~70 tests pass today. | Rewrite in plain TS arrays (or danfo.js). Low risk per function but ~900 lines and all the tests to redo. |
 | SnapTrade | `snaptrade-python-sdk`, 19 tests on mapping positions to holdings. | `snaptrade-typescript-sdk` is equally complete; the mapping would be re-ported. |
 | File import | pandas + openpyxl reads broker CSV/XLSX exports with header sniffing. | SheetJS can do it; header-sniffing logic re-ported. |
-| Bundle size | Dropping `streamlit`, `pyarrow`, `altair`, `agno`, `openai`, `Authlib`, `markdown` leaves pandas, numpy, yfinance, ddgs, openpyxl, snaptrade, cryptography, fastapi: estimated **~150–200 MB**, well under the 500 MB limit (was ~470 MB). Verify on the first preview build. | No Python function at all. |
+| Bundle size | Dropping `streamlit`, `pyarrow`, `altair`, `agno`, `openai`, `Authlib`, `markdown` leaves pandas, numpy, yfinance, ddgs, openpyxl, snaptrade, cryptography, fastapi: measured **~235 MB** installed (`requirements-api.txt`, 2026-10-21; pandas 71, numpy 58, snaptrade 18, ddgs's primp 15), about half the 500 MB limit (was ~470 MB). Recheck on the first Linux preview build. | No Python function at all. |
 | Cold start | Python still cold-starts (~1–2 s for pandas) but only the data endpoints wait; the page shell and saved-portfolio list render instantly from Next.js with skeletons. Fluid compute keeps instances warm between requests. | Fastest, single runtime. |
 
 The Python modules are already free of Streamlit except `dashboard.py`,
