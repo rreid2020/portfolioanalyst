@@ -166,6 +166,7 @@ def performance_json(p) -> dict | None:
     if p is None:
         return None
     series = p.series.rename_axis("date").reset_index()
+    series["date"] = series["date"].dt.strftime("%Y-%m-%d")
     correlation = p.correlation
     return {
         "period": p.period,

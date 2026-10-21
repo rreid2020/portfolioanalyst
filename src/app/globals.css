@@ -9,6 +9,12 @@
   --color-brand-600: #0e7c86;
   --color-brand-700: #0b6870;
   --color-brand-900: #00204a;
+  /* Charts (validated for colour-blind separation): gains, losses, and the grey a benchmark recedes into */
+  --color-gain: #008c99;
+  --color-loss: #c2571a;
+  --color-benchmark: #94a3b8;
+  --color-chart-grid: #e5e9ef;
+  --color-chart-neutral: #eef1f4;
 }
 
 body {

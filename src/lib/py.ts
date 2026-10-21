@@ -64,3 +64,35 @@ export type Figures = {
   allocation: Record<string, { group: string; value: number; weightPct: number }[]>;
   accounts: string[];
 };
+
+export type Hint = { account: string; title: string; detail: string; tickers: string[]; amount: number | null };
+
+export type AccountRow = {
+  account: string; holdings: number; value: number; cost: number | null; pl: number | null; plPct: number | null;
+  weightPct: number; annualIncome: number;
+};
+
+export type DividendRow = {
+  ticker: string; account?: string; dividendPerShare: number; currency: string; yieldPct: number | null; annualIncome: number | null;
+};
+
+export type Performance = {
+  period: string; benchmark: string; benchmarkName: string; start: string; end: string;
+  series: { date: string; portfolio: number; benchmark?: number | null }[];
+  portfolioReturn: number; benchmarkReturn: number | null; annualizedReturn: number | null;
+  volatility: number | null; beta: number | null; maxDrawdown: number; drawdownPeak: string; drawdownTrough: string;
+  correlation: { tickers: string[]; matrix: (number | null)[][] };
+  excluded: string[]; lateStarts: Record<string, string>;
+};
+
+export type Analytics = {
+  performance: Performance | null;
+  dividends: { base: Base; rows: DividendRow[]; byTicker: DividendRow[]; totalIncome: number; portfolioYield: number | null } | null;
+  hints: Hint[];
+  accountSummary: AccountRow[];
+};
+
+export type Meta = {
+  accountTypes: string[]; baseCurrencies: Base[]; benchmarks: { symbol: string; name: string; currency: string }[];
+  periods: string[]; defaultBenchmark: string; defaultPeriod: string; disclaimer: string;
+};

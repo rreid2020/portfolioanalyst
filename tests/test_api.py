@@ -113,6 +113,7 @@ class AnalyticsTest(ApiTestCase):
         self.assertRegex(performance["start"], r"^\d{4}-\d{2}-\d{2}$")
         self.assertEqual(performance["series"][0]["portfolio"], 100)
         self.assertEqual(set(performance["series"][0]), {"date", "portfolio", "benchmark"})
+        self.assertRegex(performance["series"][-1]["date"], r"^\d{4}-\d{2}-\d{2}$")
         self.assertEqual(performance["correlation"], {"tickers": [], "matrix": []})
         self.assertAlmostEqual(body["dividends"]["totalIncome"], 14)
         self.assertEqual(body["accountSummary"][0]["account"], "TFSA")
