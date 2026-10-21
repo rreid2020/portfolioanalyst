@@ -1,0 +1,6 @@
+[client]
+# Hide developer options (Deploy button, rerun menu) from public visitors.
+toolbarMode = "viewer"
+
+[browser]
+gatherUsageStats = false

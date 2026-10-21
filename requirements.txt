@@ -1,0 +1,6 @@
+agno<2
+openai
+streamlit>=1.66
+python-dotenv
+yfinance
+ddgs
