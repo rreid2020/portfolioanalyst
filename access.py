@@ -72,8 +72,31 @@ def current_user() -> User | None:
     return User(id=LOCAL_USER_ID, email=None, name=None, local=True)
 
 
+SIGN_IN_LABEL = "Sign in with Axiom"
+
+# Sends a signed-out visitor straight to the Clerk sign-in page by clicking the
+# button below, so there's no extra click. sessionStorage remembers the attempt
+# for this tab: coming back still signed out within two minutes (a cancelled or
+# failed sign-in) shows this page instead of redirecting again, so a sign-in
+# problem can't turn into a redirect loop. Fixed script; nothing user-supplied.
+AUTO_SIGN_IN_SCRIPT = """<script>
+(function () {
+  var KEY = "axiom-auto-sign-in", now = Date.now(), last = 0;
+  try { last = Number(sessionStorage.getItem(KEY)) || 0; } catch (e) {}
+  if (now - last < 120000) return;
+  try { sessionStorage.setItem(KEY, String(now)); } catch (e) {}
+  (function click(tries) {
+    var button = Array.from(document.querySelectorAll("button"))
+      .find(function (b) { return b.innerText.indexOf("%s") >= 0; });
+    if (button) button.click();
+    else if (tries < 50) setTimeout(function () { click(tries + 1); }, 100);
+  })(0);
+})();
+</script>""" % SIGN_IN_LABEL
+
+
 def sign_in_page() -> None:
-    """Full-page sign-in in the style of the ProjectCost sign-in page; stops the script."""
+    """Sign-in page in the Axiom style; usually skipped straight to Clerk. Stops the script."""
     branding.apply()
     st.html(branding.SIGN_IN_STYLE)
     left, right = st.columns([1.35, 1], gap="large", vertical_alignment="center")
@@ -82,8 +105,9 @@ def sign_in_page() -> None:
     with right:
         st.html('<div class="ax-header"><h1>Sign in</h1><p>Use your Axiom account to open your portfolios.</p></div>')
         if sign_in_configured():
-            st.button("Sign in with Axiom", type="primary", icon=":material/login:", on_click=st.login, width="stretch")
-            st.caption("The same account you use for ProjectCost. New here? You can create one on the next screen.")
+            st.button(SIGN_IN_LABEL, type="primary", icon=":material/login:", on_click=st.login, width="stretch")
+            st.caption("New here? Choose Sign up on the next screen to create your Axiom account.")
+            st.html(AUTO_SIGN_IN_SCRIPT, unsafe_allow_javascript=True)
         else:
             st.error(
                 "Sign-in isn't configured for this deployment. Set CLERK_OAUTH_CLIENT_ID, "
