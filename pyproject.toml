@@ -16,8 +16,7 @@ dependencies = [
     "cryptography",
     "markdown",
     "Authlib>=1.3.2",
-    "SQLAlchemy>=2",
-    "psycopg[binary]>=3.2",
+    "pg8000>=1.31",
 ]
 
 [tool.vercel]

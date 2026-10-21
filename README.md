@@ -81,7 +81,7 @@ Steps:
 1. Push this folder to a GitHub repo and import it in the Vercel dashboard (or run `vercel` from this folder with the Vercel CLI).
 2. In **Project → Settings → Environment Variables**, add `AI_GATEWAY_API_KEY` (and the `SNAPTRADE_*` keys to enable **Connect brokerage**).
 3. Make sure **Fluid compute** is on (default for new projects). WebSockets require it.
-4. The installed dependencies are ~540 MB, just over the 500 MB Python limit. New projects use large functions automatically; for an existing project, add the environment variable `VERCEL_SUPPORT_LARGE_FUNCTIONS=1`.
+4. The installed dependencies are about 470 MB, close to Vercel's 500 MB maximum for a Python function (the build fails with `LAMBDA_SIZE_EXCEEDED` above it). Keep new dependencies small: for example, the database uses the pure-Python `pg8000` driver rather than SQLAlchemy and a compiled driver, which would add about 37 MB.
 5. Deploy, then open the preview URL and run an analysis before adding a domain.
 
 ### Add a subdomain
