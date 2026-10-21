@@ -20,7 +20,6 @@ if USER is None:
     access.sign_in_page()  # stops the script
 
 # Everything below runs only for a signed-in (or local) user.
-import math  # noqa: E402
 import os  # noqa: E402
 from urllib.parse import urlencode, urlsplit, urlunsplit  # noqa: E402
 
@@ -33,16 +32,14 @@ from agno.tools.yfinance import YFinanceTools  # noqa: E402
 from agno.tools.duckduckgo import DuckDuckGoTools  # noqa: E402
 from agno.tools.calculator import CalculatorTools  # noqa: E402
 
-import account_hints  # noqa: E402
 import branding  # noqa: E402
 import brokerage_sync  # noqa: E402
 import dashboard  # noqa: E402
 import db  # noqa: E402
-import portfolio_analytics  # noqa: E402
 import portfolio_metrics  # noqa: E402
-import rebalance  # noqa: E402
 import report  # noqa: E402
-from portfolio_import import ACCOUNT_TYPES, COLUMNS, normalize_account, read_holdings, template_csv  # noqa: E402
+from portfolio_service import format_prompt, parse_portfolio  # noqa: E402
+from portfolio_import import ACCOUNT_TYPES, COLUMNS, read_holdings, template_csv  # noqa: E402
 
 load_dotenv()
 
@@ -188,67 +185,6 @@ def analysis_section(model_id: str) -> None:
     chat += [{"role": "user", "content": question}, {"role": "assistant", "content": answer}]
     # Rerun so the downloads include the new answer.
     st.rerun()
-
-
-def _cell(value):
-    """Data editor cells can be None, NaN or strings; normalize to str/None."""
-    if value is None or (isinstance(value, float) and math.isnan(value)):
-        return None
-    return value
-
-
-def parse_portfolio(rows):
-    holdings = []
-    for row in rows:
-        ticker = str(_cell(row.get("Ticker")) or "").strip().upper()
-        if not ticker:
-            continue
-        try:
-            shares = float(_cell(row.get("Shares")) or 0)
-            avg_price = _cell(row.get("Avg Buy Price"))
-            avg_price = float(avg_price) if avg_price is not None else None
-        except ValueError:
-            continue
-        if shares <= 0:
-            continue
-        currency = str(_cell(row.get("Currency")) or "").strip().upper()
-        holdings.append(
-            {
-                "ticker": ticker,
-                "shares": shares,
-                "avg_price": avg_price,
-                # Blank means the cost is in the currency the ticker trades in.
-                "currency": currency or None,
-                "account": normalize_account(_cell(row.get("Account"))) or None,
-            }
-        )
-    return holdings
-
-
-def format_prompt(
-    holdings, question: str, figures=None, performance=None, dividends=None, hints=None, rebalance_plan=None
-) -> str:
-    lines = ["Here is my current stock portfolio:", ""]
-    lines.append("| Ticker | Shares | Avg Buy Price | Currency | Account |")
-    lines.append("|--------|--------|---------------|----------|---------|")
-    for h in holdings:
-        avg = h["avg_price"] if h["avg_price"] is not None else "unknown"
-        currency = h["currency"] or "same as listing"
-        account = h.get("account") or "unspecified"
-        lines.append(
-            f"| {h['ticker']} | {h['shares']} | {avg} | {currency} | {account} |"
-        )
-    if figures is not None:
-        lines += ["", portfolio_metrics.to_markdown(figures)]
-    if performance is not None or dividends is not None:
-        lines += ["", portfolio_analytics.to_markdown(performance, dividends)]
-    if figures is not None and not figures.positions.empty:
-        lines += ["", account_hints.to_markdown(figures, dividends, hints or [])]
-    if rebalance_plan is not None:
-        lines += ["", rebalance.to_markdown(rebalance_plan)]
-    lines.append("")
-    lines.append(question.strip() or "Analyze my portfolio end-to-end.")
-    return "\n".join(lines)
 
 
 def disconnect_brokerage(client) -> None:

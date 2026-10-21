@@ -6,6 +6,7 @@ import streamlit as st
 import account_hints
 import portfolio_analytics
 import portfolio_metrics
+import portfolio_service
 import rebalance
 
 # Validated with the dataviz palette checker: both clear the chroma floor and
@@ -41,12 +42,7 @@ def _history(symbols: tuple):
 
 def load_figures(holdings, base: str):
     """Figures for the holdings from quotes cached for 5 minutes, or None without holdings."""
-    if not holdings:
-        return None
-    quotes = _quotes(tuple(sorted({h["ticker"] for h in holdings})))
-    currencies = portfolio_metrics.needed_currencies(holdings, quotes) | {base}
-    fx = _fx(tuple(sorted(currencies)), base)
-    return portfolio_metrics.compute(holdings, quotes, fx, base)
+    return portfolio_service.load_figures(holdings, base, quotes_fn=_quotes, fx_fn=_fx)
 
 
 def _money(value, signed=False):
@@ -365,23 +361,6 @@ def dividends_tab(figures, dividends):
         st.info("None of these holdings paid a dividend in the past 12 months.")
 
 
-def _new_holding_rows(rows, wanted, base):
-    """Add holdings typed into the targets table that aren't owned yet. Returns (rows, unknown)."""
-    unknown = []
-    for ticker in wanted:
-        quote = _quotes((ticker,)).get(ticker)
-        if quote is None:
-            unknown.append(ticker)
-            continue
-        price, currency = portfolio_metrics.normalize(quote.price, quote.currency)
-        fx = _fx(tuple(sorted({currency, base})), base).get(currency)
-        if fx is None:
-            unknown.append(ticker)
-            continue
-        rows = rebalance.add_holding(rows, ticker, price, currency, fx)
-    return rows, unknown
-
-
 def rebalance_tab(figures):
     """Targets editor and the trades that reach them. Returns the Plan when it has trades."""
     base = figures.base
@@ -403,13 +382,8 @@ def rebalance_tab(figures):
     fractional = toggles.toggle("Fractional shares", value=True, key="rebalance_fractional",
                                 help="Wealthsimple and some other brokers trade fractions of a share.")
 
-    if scope == rebalance.ALL_ACCOUNTS:
-        positions = figures.by_ticker()
-    else:
-        positions = figures.positions[figures.positions["Account"] == scope]
-    rows = rebalance.universe(positions, rebalance.GROUPINGS[group_by])
-    current = rows.groupby("Group", sort=False)["Value"].sum()
-    exact = current / current.sum() * 100
+    rows = portfolio_service.rebalance_rows(figures, group_by, scope)
+    exact = portfolio_service.current_weights(rows)
     weights = exact.round(1)
     table = pd.DataFrame({"Group": weights.index, "Current %": weights.values, "Target %": weights.values})
 
@@ -436,17 +410,12 @@ def rebalance_tab(figures):
     if group_by == "Holding":
         edited["Group"] = edited["Group"].str.upper()
     edited = edited[edited["Group"] != ""]
-    targets = dict(zip(edited["Group"], edited["Target %"].fillna(0.0)))
-    # A target left at its (rounded) current weight means "keep it": use the exact
-    # weight, so rounding alone doesn't produce trades.
-    for group, target in targets.items():
-        if group in weights.index and abs(target - weights[group]) < 1e-9:
-            targets[group] = exact[group]
+    targets = portfolio_service.resolve_targets(dict(zip(edited["Group"], edited["Target %"].fillna(0.0))), exact)
 
     unknown = []
     if group_by == "Holding":
         new = [t for t in targets if t not in set(rows["Group"]) and targets[t] > 0]
-        rows, unknown = _new_holding_rows(rows, new, base)
+        rows, unknown = portfolio_service.new_holding_rows(rows, new, base, quotes_fn=_quotes, fx_fn=_fx)
     if unknown:
         st.warning(f"No live price for {', '.join(unknown)}; left out of the plan.")
 

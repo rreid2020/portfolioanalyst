@@ -191,13 +191,35 @@ Positions are read with `get_all_account_positions`. SnapTrade's older `get_user
 6. Read the report as it streams in: holdings table with live prices and P/L, portfolio-level metrics, risk flags, and 3–5 rebalancing recommendations.
 7. Ask follow-up questions in the box under the report, and download it as Markdown or HTML (open the HTML file and print it to save a PDF). The report and conversation last for the browser session.
 
+## 🔌 HTTP API (for the Next.js frontend)
+
+The app is moving to a Next.js frontend ([docs/migration-plan.md](docs/migration-plan.md)). The portfolio logic is served to it as a stateless FastAPI app, `api/index.py`, under `/api/py`; the Streamlit app keeps working alongside it and shares the same steps through `portfolio_service.py`.
+
+```bash
+pip install -r requirements-api.txt
+uvicorn api.index:app --reload --port 8000
+# interactive docs: http://localhost:8000/api/py/docs
+```
+
+| Route | What it returns |
+|---|---|
+| `GET /health`, `GET /meta`, `GET /template.csv` | public: status, account types, benchmarks, periods, groupings; the import template |
+| `POST /figures` | live quotes valued in CAD or USD: totals, positions, allocations |
+| `POST /analytics` | backtest vs benchmark, risk, dividends, per-account summary, placement hints |
+| `POST /rebalance` | current weights and the trades that reach the targets |
+| `POST /prompt` | the analyst's first message with every computed figure |
+| `POST /import` | holdings from a broker's CSV or Excel export (multipart `file`) |
+| `GET /research/{price,fundamentals,recommendations,news,history,search}` | lookups for the analyst's tools |
+
+Requests send the holdings (`ticker`, `shares`, `avgBuyPrice`, `currency`, `account`); responses use camelCase keys. Everything except the public routes needs a Clerk session token, as `Authorization: Bearer` or the `__session` cookie (`clerk_auth.py`). Set `CLERK_JWT_KEY` (the instance's PEM public key, verifies without a network call) or `CLERK_ISSUER_URL` (fetches the keys), and optionally `CLERK_AUTHORIZED_PARTIES` (comma-separated origins). Without either, it runs as one local user on your computer and refuses every request on Vercel.
+
 ## 🧪 Tests
 
 ```bash
 python -m unittest discover -s tests
 ```
 
-The brokerage tests replace SnapTrade's HTTP API with canned responses, so the real SDK still signs, sends and deserializes each request, and they drive the Streamlit UI with `AppTest`. They need no API keys.
+The brokerage tests replace SnapTrade's HTTP API with canned responses, so the real SDK still signs, sends and deserializes each request, and they drive the Streamlit UI with `AppTest`. The API tests (`tests/test_api.py`) call it through FastAPI's `TestClient` and sign their own Clerk-style tokens. They need no API keys.
 
 ## 🧠 What the Agent Does
 
