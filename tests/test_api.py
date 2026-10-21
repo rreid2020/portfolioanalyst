@@ -13,14 +13,19 @@ from pathlib import Path
 from unittest import mock
 
 import jwt
+import pandas as pd
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # sibling test helpers
+import _isolation  # noqa: E402,F401  (temp database for the brokerage store)
+sys.path.insert(0, str(ROOT))
 
+import api.index  # noqa: E402
+import brokerage_store  # noqa: E402
+import brokerage_sync  # noqa: E402
 import clerk_auth  # noqa: E402
 import portfolio_analytics  # noqa: E402
 import portfolio_metrics  # noqa: E402
@@ -244,6 +249,90 @@ class MetaAndResearchTest(ApiTestCase):
     def test_history_rejects_bad_period(self):
         r = self.client.get("/api/py/research/history", params={"symbol": "AAPL", "period": "forever"})
         self.assertEqual(r.status_code, 422)
+
+
+class BrokerageTest(ApiTestCase):
+    """SnapTrade itself is faked; test_brokerage_sync.py covers the SDK calls."""
+
+    USER = {"user_id": "portfolio-user-abc", "user_secret": "secret"}
+
+    def setUp(self):
+        super().setUp()
+        self.snaptrade = mock.MagicMock()
+        patches = [
+            mock.patch.dict(os.environ, {"SNAPTRADE_CLIENT_ID": "id", "SNAPTRADE_CONSUMER_KEY": "key"}),
+            mock.patch.object(brokerage_sync, "make_client", return_value=self.snaptrade),
+            mock.patch.object(brokerage_sync, "register_user", return_value=dict(self.USER)),
+            mock.patch.object(brokerage_sync, "connection_portal_url", return_value="https://app.snaptrade.com/portal?x"),
+            mock.patch.object(brokerage_sync, "delete_user"),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        api.index._engine.cache_clear()
+        self.store = brokerage_store.BrokerageStore(api.index._engine(), clerk_auth.LOCAL_USER_ID)
+        self.store.delete()
+        self.addCleanup(self.store.delete)
+
+    def connect(self, redirect="http://testserver/portfolios/1/edit?brokerage=connected"):
+        return self.client.post("/api/py/brokerage/connect", json={"redirectUrl": redirect})
+
+    def test_hidden_without_keys(self):
+        with mock.patch.dict(os.environ, {"SNAPTRADE_CLIENT_ID": ""}):
+            self.assertEqual(self.client.get("/api/py/brokerage").json(), {"configured": False, "connected": False})
+            self.assertEqual(self.connect().status_code, 404)
+
+    def test_connect_saves_one_snaptrade_user_and_reuses_it(self):
+        self.assertFalse(self.client.get("/api/py/brokerage").json()["connected"])
+        r = self.connect()
+        self.assertEqual(r.json(), {"url": "https://app.snaptrade.com/portal?x"})
+        brokerage_sync.register_user.assert_called_once_with(self.snaptrade, saved=True)
+        args, kwargs = brokerage_sync.connection_portal_url.call_args
+        self.assertEqual(args[1], self.USER)
+        self.assertEqual(kwargs["redirect_url"], "http://testserver/portfolios/1/edit?brokerage=connected")
+        self.assertTrue(self.client.get("/api/py/brokerage").json()["connected"])
+        self.connect()
+        brokerage_sync.register_user.assert_called_once()  # the saved user is reused
+
+    def test_secret_is_stored_encrypted(self):
+        self.connect()
+        with api.index._engine().connect() as conn:
+            (sealed,) = api.index._engine().execute(conn, "SELECT sealed_user FROM brokerage_connections").fetchone()
+        self.assertNotIn("secret", sealed)
+        self.assertEqual(self.store.get()["user_secret"], "secret")
+
+    def test_return_address_must_be_this_site(self):
+        self.assertEqual(self.connect("https://evil.example/steal").status_code, 422)
+        self.assertEqual(self.connect("javascript:alert(1)").status_code, 422)
+        brokerage_sync.register_user.assert_not_called()
+
+    def test_load_holdings(self):
+        self.assertEqual(self.client.post("/api/py/brokerage/holdings").status_code, 409)
+        self.connect()
+        table = pd.DataFrame([{"Ticker": "SHOP.TO", "Shares": 3.0, "Avg Buy Price": 90.0, "Currency": "CAD", "Account": "TFSA"}])
+        with mock.patch.object(brokerage_sync, "fetch_holdings", return_value=(table, ["Skipped 1 option."])) as fetch:
+            r = self.client.post("/api/py/brokerage/holdings")
+        self.assertEqual(fetch.call_args.args[1]["user_secret"], "secret")
+        self.assertEqual(r.json(), {
+            "holdings": [{"ticker": "SHOP.TO", "shares": 3.0, "avgBuyPrice": 90.0, "currency": "CAD", "account": "TFSA"}],
+            "warnings": ["Skipped 1 option."],
+        })
+        with mock.patch.object(brokerage_sync, "fetch_holdings", side_effect=ValueError("No brokerage is connected")):
+            r = self.client.post("/api/py/brokerage/holdings")
+        self.assertEqual((r.status_code, r.json()["detail"]), (409, "No brokerage is connected"))
+
+    def test_disconnect_deletes_the_snaptrade_user(self):
+        self.connect()
+        self.assertEqual(self.client.delete("/api/py/brokerage").json(), {"connected": False})
+        brokerage_sync.delete_user.assert_called_once()
+        self.assertIsNone(self.store.get())
+        self.assertFalse(self.client.get("/api/py/brokerage").json()["connected"])
+
+    def test_snaptrade_errors_are_reported(self):
+        brokerage_sync.register_user.side_effect = RuntimeError("down")
+        r = self.connect()
+        self.assertEqual((r.status_code, r.json()["detail"]), (502, "Couldn't reach SnapTrade: down"))
+        self.assertIsNone(self.store.get())
 
 
 def make_key():

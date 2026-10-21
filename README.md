@@ -171,6 +171,10 @@ The app has no login, so with a commercial key:
 - While the token is in the URL, anyone with that exact URL can load those holdings for up to an hour, so don't share the URL mid-connection. Loading with **Disconnect after loading** (on by default) or clicking **Disconnect** deletes the SnapTrade user and its brokerage connection, and removes the token from the URL.
 - Visitors reconnect on each visit. Users left behind by closed tabs are deleted the next time anyone connects, once they are more than an hour old (`STALE_USER_SECONDS` in `brokerage_sync.py`). Only ids with this app's prefix are touched.
 
+### In the Next.js app
+
+Signing in changes how connections are kept. In the holdings editor, **Connect brokerage** registers one SnapTrade user for your Axiom account (id `portfolio-user-<random>`) and saves it in the `brokerage_connections` table, its secret encrypted with a key derived from `SNAPTRADE_CONSUMER_KEY` (`brokerage_store.py`). SnapTrade's portal opens in a new tab and returns to the editor, where **Load holdings** fills the table. The connection stays saved, so on later visits **Load from brokerage** refreshes without signing in to the broker again, until you click **Disconnect**, which deletes the SnapTrade user. The cleanup of abandoned Streamlit session users never touches these ids. A kept connection counts as a connected user on SnapTrade's paid plans (see below).
+
 ### Pricing (checked October 2026)
 
 From [snaptrade.com/pricing](https://snaptrade.com/pricing):

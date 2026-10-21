@@ -49,6 +49,15 @@ SCHEMA = [
         currency TEXT,
         account TEXT
     )""",
+    # One SnapTrade user per signed-in user, its secret encrypted (brokerage_store.py). On Neon the
+    # Next.js app's migrations create this table too; whichever runs first wins.
+    """CREATE TABLE IF NOT EXISTS brokerage_connections (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        snaptrade_user_id TEXT NOT NULL,
+        sealed_user TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""",
     "CREATE INDEX IF NOT EXISTS ix_portfolios_user ON portfolios (user_id)",
     "CREATE INDEX IF NOT EXISTS ix_holdings_portfolio ON holdings (portfolio_id)",
 ]

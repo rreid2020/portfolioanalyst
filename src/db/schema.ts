@@ -54,3 +54,13 @@ export const analyses = pgTable(
   },
   (t) => [index("ix_analyses_portfolio").on(t.portfolioId, t.userId)],
 );
+
+// Each user's SnapTrade user, written and read only by the Python API (brokerage_store.py), which
+// keeps the secret encrypted. Defined here so migrations create it and deleting a user removes it.
+export const brokerageConnections = pgTable("brokerage_connections", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  snaptradeUserId: text("snaptrade_user_id").notNull(),
+  sealedUser: text("sealed_user").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});

@@ -8,8 +8,10 @@ Local: uvicorn api.index:app --reload --port 8000   (docs at /api/py/docs)
 """
 import json
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 # On Vercel this file runs from api/; the logic modules sit one level up.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -23,7 +25,10 @@ from pydantic import BaseModel, Field  # noqa: E402
 load_dotenv()
 
 import account_hints  # noqa: E402
+import brokerage_store  # noqa: E402
+import brokerage_sync  # noqa: E402
 import clerk_auth  # noqa: E402
+import db  # noqa: E402
 import portfolio_analytics  # noqa: E402
 import portfolio_metrics  # noqa: E402
 import portfolio_service  # noqa: E402
@@ -394,6 +399,90 @@ def research_history(symbol: str, period: str = "1mo", interval: str = "1d"):
 @private.get("/research/search")
 def research_search(q: str = Query(..., max_length=300), news: bool = False, limit: int = 5):
     return _lookup(research.search, q, news, limit)
+
+
+# ---- Brokerage (SnapTrade) ---------------------------------------------------
+
+@lru_cache(maxsize=1)
+def _engine():
+    url = db.database_url()
+    if not url:
+        raise HTTPException(503, "The database isn't configured for this deployment.")
+    return db.make_engine(url)
+
+
+def brokerage_for(caller: clerk_auth.Caller):
+    """(client, store, saved SnapTrade user or None); 404 when SnapTrade isn't set up here."""
+    if not brokerage_sync.is_configured():
+        raise HTTPException(404, "Brokerage connections aren't set up for this deployment.")
+    store = brokerage_store.BrokerageStore(_engine(), caller.user_id)
+    return brokerage_sync.make_client(), store, store.get()
+
+
+def _snaptrade_error(exc: Exception) -> HTTPException:
+    return HTTPException(502, f"Couldn't reach SnapTrade: {brokerage_sync.error_message(exc)}")
+
+
+class ConnectIn(BaseModel):
+    redirectUrl: str = Field(max_length=2000)
+
+
+@private.get("/brokerage")
+def brokerage_status(caller: clerk_auth.Caller = Depends(signed_in)):
+    """Whether connecting is available here and whether this user has a connection saved."""
+    if not brokerage_sync.is_configured():
+        return {"configured": False, "connected": False}
+    if brokerage_sync.is_personal():
+        return {"configured": True, "personal": True, "connected": True, "connectedAt": None}
+    user = brokerage_store.BrokerageStore(_engine(), caller.user_id).get()
+    return {"configured": True, "personal": False, "connected": user is not None, "connectedAt": user and user["connected_at"]}
+
+
+@private.post("/brokerage/connect")
+def brokerage_connect(body: ConnectIn, request: Request, caller: clerk_auth.Caller = Depends(signed_in)):
+    """A read-only SnapTrade connection portal link (valid 5 minutes) that returns to `redirectUrl`."""
+    target = urlsplit(body.redirectUrl)
+    if target.scheme not in ("http", "https") or target.netloc != request.headers.get("x-forwarded-host", request.url.netloc):
+        raise HTTPException(422, "The return address must be on this site.")
+    client, store, user = brokerage_for(caller)
+    try:
+        if user is None and not brokerage_sync.is_personal():
+            user = brokerage_sync.register_user(client, saved=True)
+            store.save(user)
+        url = brokerage_sync.connection_portal_url(client, None if brokerage_sync.is_personal() else user, redirect_url=body.redirectUrl)
+    except HTTPException:
+        raise
+    except Exception as exc:  # SnapTrade or network errors
+        raise _snaptrade_error(exc) from exc
+    return {"url": url}
+
+
+@private.post("/brokerage/holdings")
+def brokerage_holdings(caller: clerk_auth.Caller = Depends(signed_in)):
+    """Holdings from every connected investment account, one row per ticker per account."""
+    client, _, user = brokerage_for(caller)
+    if user is None and not brokerage_sync.is_personal():
+        raise HTTPException(409, "Connect a brokerage first.")
+    try:
+        table, warnings = brokerage_sync.fetch_holdings(client, None if brokerage_sync.is_personal() else user)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:
+        raise _snaptrade_error(exc) from exc
+    return {"holdings": records(table), "warnings": warnings}
+
+
+@private.delete("/brokerage")
+def brokerage_disconnect(caller: clerk_auth.Caller = Depends(signed_in)):
+    """Delete this user's SnapTrade user, which removes its brokerage connections."""
+    client, store, user = brokerage_for(caller)
+    if user is not None:
+        try:
+            brokerage_sync.delete_user(client, user)
+        except Exception as exc:
+            raise _snaptrade_error(exc) from exc
+        store.delete()
+    return {"connected": False}
 
 
 app.include_router(public)

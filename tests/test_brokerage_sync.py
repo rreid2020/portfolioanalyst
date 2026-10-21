@@ -222,6 +222,26 @@ class FetchHoldingsTest(unittest.TestCase):
         (register,) = api.find("POST", "/snapTrade/registerUser")
         self.assertTrue(register["body"]["userId"].startswith(brokerage_sync.USER_ID_PREFIX))
 
+    def test_saved_users_are_never_cleaned_up(self):
+        now = int(time.time())
+        saved = f"{brokerage_sync.SAVED_USER_ID_PREFIX}{'a' * 32}"
+        routes = {
+            ("GET", "/snapTrade/listUsers"): [saved],
+            ("POST", "/snapTrade/registerUser"): {"userId": "portfolio-user-new", "userSecret": "s"},
+        }
+        with FakeSnapTradeAPI(routes) as api:
+            brokerage_sync.register_user(brokerage_sync.make_client(), saved=True)
+            self.assertEqual(brokerage_sync.delete_stale_users(brokerage_sync.make_client(), now=now + 10**9), 0)
+        self.assertEqual(api.find("DELETE", "/snapTrade/deleteUser"), [])
+        (register,) = api.find("POST", "/snapTrade/registerUser")
+        self.assertTrue(register["body"]["userId"].startswith(brokerage_sync.SAVED_USER_ID_PREFIX))
+
+    def test_saved_users_unseal_at_any_age(self):
+        token = brokerage_sync.seal_user(USER)
+        with mock.patch("time.time", return_value=time.time() + 10 * brokerage_sync.STALE_USER_SECONDS):
+            self.assertIsNone(brokerage_sync.unseal_user(token))
+            self.assertEqual(brokerage_sync.unseal_user(token, ttl=None), USER)
+
     def test_register_survives_cleanup_failure(self):
         routes = {("POST", "/snapTrade/registerUser"): {"userId": "u", "userSecret": "s"}}
         with FakeSnapTradeAPI(routes):  # listUsers is unrouted, so cleanup fails

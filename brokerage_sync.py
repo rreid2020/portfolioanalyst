@@ -35,6 +35,9 @@ from snaptrade_client.exceptions import ApiException
 from portfolio_import import COLUMNS, _yfinance_symbol, normalize_account
 
 USER_ID_PREFIX = "portfolio-analyst-"
+# SnapTrade users saved per signed-in user (brokerage_store.py). A different prefix, so the cleanup of
+# abandoned session users (delete_stale_users) never touches them.
+SAVED_USER_ID_PREFIX = "portfolio-user-"
 STALE_USER_SECONDS = 60 * 60
 
 # Instrument kinds yfinance can price by ticker. Options, crypto, bonds and
@@ -117,13 +120,14 @@ def delete_stale_users(client: SnapTrade, now=None) -> int:
     return deleted
 
 
-def register_user(client: SnapTrade) -> dict:
-    """Register a SnapTrade user for this browser session."""
+def register_user(client: SnapTrade, saved: bool = False) -> dict:
+    """Register a SnapTrade user: for this browser session, or with saved=True one kept for a signed-in user."""
     try:
         delete_stale_users(client)
     except Exception:
         pass  # Cleanup is best effort; it must not block connecting.
-    user_id = f"{USER_ID_PREFIX}{int(time.time())}-{uuid.uuid4().hex}"
+    prefix = SAVED_USER_ID_PREFIX if saved else f"{USER_ID_PREFIX}{int(time.time())}-"
+    user_id = f"{prefix}{uuid.uuid4().hex}"
     body = client.authentication.register_snap_trade_user(user_id=user_id).body
     return {"user_id": str(body["userId"]), "user_secret": str(body["userSecret"])}
 
@@ -143,10 +147,10 @@ def seal_user(user) -> str:
     return _fernet().encrypt(json.dumps(user).encode()).decode()
 
 
-def unseal_user(token: str):
-    """The user from seal_user, or None if the token is invalid or older than STALE_USER_SECONDS."""
+def unseal_user(token: str, ttl: int | None = STALE_USER_SECONDS):
+    """The user from seal_user, or None if the token is invalid or older than `ttl` seconds (None: any age)."""
     try:
-        user = json.loads(_fernet().decrypt(token.encode(), ttl=STALE_USER_SECONDS))
+        user = json.loads(_fernet().decrypt(token.encode(), ttl=ttl))
     except (InvalidToken, ValueError):
         return None
     if not isinstance(user, dict) or not {"user_id", "user_secret"} <= user.keys():

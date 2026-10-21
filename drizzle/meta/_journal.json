@@ -15,6 +15,13 @@
       "when": 1792623500101,
       "tag": "0001_analyses",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792625873914,
+      "tag": "0002_brokerage_connections",
+      "breakpoints": true
     }
   ]
 }

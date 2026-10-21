@@ -7,6 +7,7 @@ import { saveNewAction, updateAction } from "@/app/portfolio-actions";
 import { ACCOUNT_TYPES } from "@/lib/accounts";
 import { checkRows, emptyRow, pastedRows, toRow, type Field, type Row } from "@/lib/holdings";
 import { MAX_NAME } from "@/lib/limits";
+import { BrokeragePanel, useBrokerage, type Loaded } from "./BrokeragePanel";
 
 type Saved = { ticker: string; shares: number | null; avgBuyPrice: number | null; currency: string | null; account: string | null };
 type Props = { portfolio?: { id: number; name: string; holdings: Saved[] } };
@@ -27,6 +28,7 @@ export function HoldingsEditor({ portfolio }: Props) {
   const [importing, setImporting] = useState(false);
   const [saving, startSaving] = useTransition();
   const file = useRef<HTMLInputElement>(null);
+  const brokerage = useBrokerage();
 
   const checked = checkRows(rows);
   const errorCount = Object.keys(checked.errors).length;
@@ -79,6 +81,15 @@ export function HoldingsEditor({ portfolio }: Props) {
     }
   }
 
+  function loadFromBrokerage(holdings: Loaded[], warnings: string[]) {
+    if (checked.count > 0 && !window.confirm(`Replace the ${checked.count} holding${checked.count === 1 ? "" : "s"} in the table with your brokerage's?`)) return;
+    const loaded = holdings.map(toRow);
+    setRows(loaded.length ? loaded : [emptyRow()]);
+    setMessage({ tone: "info", text: [`Loaded ${loaded.length} holding${loaded.length === 1 ? "" : "s"} from your brokerage. Save to keep them.`, ...warnings].join(" ") });
+    if (!name.trim()) setName("Brokerage holdings");
+    brokerage.setOpen(false);
+  }
+
   function save() {
     setShowErrors(true);
     if (errorCount) return setMessage({ tone: "error", text: `Fix the ${errorCount} highlighted row${errorCount === 1 ? "" : "s"} first.` });
@@ -118,13 +129,20 @@ export function HoldingsEditor({ portfolio }: Props) {
             {importing ? "Importing…" : "Import CSV or Excel"}
           </button>
           <a href="/api/py/template.csv" className="text-xs font-medium text-brand-600 hover:underline">Download template</a>
+          {brokerage.status?.configured && !brokerage.open && (
+            <button type="button" className="btn btn-secondary" onClick={() => brokerage.setOpen(true)}>
+              {brokerage.status.connected ? "Load from brokerage" : "Connect brokerage"}
+            </button>
+          )}
         </div>
       </div>
 
       <p className="text-xs text-slate-500">
-        One row per position. Import a holdings export from Wealthsimple, Questrade, IBKR and most other brokers, or paste rows copied
-        from a spreadsheet into the Ticker column.
+        One row per position. Import a holdings export from Wealthsimple, Questrade, IBKR and most other brokers, connect your brokerage,
+        or paste rows copied from a spreadsheet into the Ticker column.
       </p>
+
+      {brokerage.open && <BrokeragePanel brokerage={brokerage} onLoad={loadFromBrokerage} />}
 
       {message && (
         <div role={message.tone === "error" ? "alert" : "status"} className={`rounded-md px-3 py-2 text-sm ring-1 ring-inset ${message.tone === "error" ? "bg-red-50 text-red-800 ring-red-200" : "bg-brand-50 text-brand-700 ring-brand-100"}`}>
