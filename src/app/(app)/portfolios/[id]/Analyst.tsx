@@ -9,6 +9,8 @@ import remarkGfm from "remark-gfm";
 import { Card } from "@/components/ui";
 import { DEFAULT_QUESTION, MODELS, toolLabel } from "@/lib/analyst-shared";
 import { filename, stamp, toHtml, toMarkdown, type ChatTurn } from "@/lib/report";
+import Link from "next/link";
+import type { RebalanceOptions } from "./Rebalancer";
 
 type Meta = { analysisId?: number };
 type Message = UIMessage<Meta>;
@@ -52,27 +54,34 @@ function download(name: string, type: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
-export function Analyst({ portfolioId, base, period, benchmark, saved }: {
+export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance, withoutRebalance }: {
   portfolioId: number; base: string; period: string; benchmark: string; saved: SavedAnalysis | null;
+  /** A plan from the Rebalance tab for a new run to comment on; `withoutRebalance` is this tab without it. */
+  rebalance: RebalanceOptions | null; withoutRebalance: string;
 }) {
   const [model, setModel] = useState<string>(saved?.model ?? MODELS[0].id);
   const [question, setQuestion] = useState(DEFAULT_QUESTION);
   const [followUp, setFollowUp] = useState("");
-  const [run, setRun] = useState(() => ({ key: saved?.id ?? 0, analysisId: saved?.id, createdAt: saved?.createdAt, base: saved?.base ?? base }));
+  // A plan sent from the Rebalance tab starts a new run rather than showing the saved one.
+  const [run, setRun] = useState(() => (rebalance ? { key: 0, analysisId: undefined, createdAt: undefined, base }
+    : { key: saved?.id ?? 0, analysisId: saved?.id, createdAt: saved?.createdAt, base: saved?.base ?? base }));
   // The transport reads these when it sends, so they're refs rather than state captured at creation.
-  const live = useRef({ analysisId: saved?.id, model, base: run.base });
+  const live = useRef({ analysisId: run.analysisId, model, base: run.base });
   live.current.model = model;
 
   const transport = useMemo(
     () => new DefaultChatTransport<Message>({
       api: "/api/analyst",
-      body: () => ({ portfolioId, period, benchmark, model: live.current.model, base: live.current.base, analysisId: live.current.analysisId }),
+      body: () => ({
+        portfolioId, period, benchmark, model: live.current.model, base: live.current.base, analysisId: live.current.analysisId,
+        ...(rebalance && !live.current.analysisId && { rebalance }),
+      }),
     }),
-    [portfolioId, period, benchmark],
+    [portfolioId, period, benchmark, rebalance],
   );
   const { messages, sendMessage, status, error, stop, regenerate, setMessages } = useChat<Message>({
     id: `analysis-${portfolioId}-${run.key}`,
-    messages: (saved && run.key === saved.id ? saved.messages : []) as Message[],
+    messages: (saved && run.analysisId === saved.id ? saved.messages : []) as Message[],
     transport,
     onFinish: ({ message }) => {
       const id = message.metadata?.analysisId;
@@ -123,6 +132,12 @@ export function Analyst({ portfolioId, base, period, benchmark, saved }: {
             <span className="text-xs font-medium text-slate-600">What should the analyst focus on?</span>
             <textarea className="input mt-1 block min-h-24 w-full" maxLength={2000} value={question} onChange={(e) => setQuestion(e.target.value)} />
           </label>
+          {rebalance && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-brand-50 px-3 py-2 text-sm text-brand-700 ring-1 ring-inset ring-brand-100">
+              <span>Includes your rebalance plan ({rebalance.groupBy.toLowerCase()} targets, {rebalance.scope.toLowerCase()}{rebalance.cash ? `, ${rebalance.cash.toLocaleString("en-CA")} ${base} new cash` : ""}).</span>
+              <Link href={withoutRebalance} className="text-xs font-medium underline">Leave it out</Link>
+            </div>
+          )}
           <div className="flex flex-wrap items-end gap-3">
             <label className="block">
               <span className="text-xs font-medium text-slate-600">Model (via Vercel AI Gateway)</span>

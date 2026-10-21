@@ -23,6 +23,15 @@ const Body = z.object({
   base: z.enum(["CAD", "USD"]),
   period: z.string().max(10).optional(),
   benchmark: z.string().max(20).optional(),
+  // A plan from the Rebalance tab, for the first message of a run (PromptIn.rebalance in api/index.py).
+  rebalance: z.object({
+    groupBy: z.enum(["Holding", "Sector", "Currency"]),
+    scope: z.string().max(60),
+    cash: z.number().min(0),
+    buyOnly: z.boolean(),
+    fractional: z.boolean(),
+    targets: z.record(z.string().max(60), z.number()),
+  }).optional(),
 });
 
 // Plain text, which the chat client shows as the error message.
@@ -56,6 +65,7 @@ export async function POST(req: Request) {
         question: text(body.messages[0]) || DEFAULT_QUESTION,
         ...(body.period && { period: body.period }),
         ...(body.benchmark && { benchmark: body.benchmark }),
+        ...(body.rebalance && { rebalance: { ...body.rebalance, targets: Object.keys(body.rebalance.targets).length ? body.rebalance.targets : null } }),
       }));
       analysisId = (await createAnalysis(userId, portfolio.id, { model: body.model, base: body.base, prompt, messages: body.messages }))!;
     }

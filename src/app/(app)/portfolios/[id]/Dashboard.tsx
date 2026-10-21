@@ -9,6 +9,7 @@ import {
   AccountsView, AllocationView, ALLOCATION_VIEWS, AnalyticsSkeleton, DividendsView, GainLossView, PerformanceView, PositionsView,
 } from "./views";
 import { Analyst, type SavedAnalysis } from "./Analyst";
+import { Rebalancer, type RebalanceOptions } from "./Rebalancer";
 
 const TABS = [
   { key: "allocation", label: "Allocation" },
@@ -16,6 +17,7 @@ const TABS = [
   { key: "accounts", label: "Accounts" },
   { key: "performance", label: "Performance & risk" },
   { key: "dividends", label: "Dividends" },
+  { key: "rebalance", label: "Rebalance" },
   { key: "positions", label: "Positions" },
   { key: "analyst", label: "Analyst" },
 ] as const;
@@ -23,7 +25,20 @@ type Tab = (typeof TABS)[number]["key"];
 const ANALYTICS_TABS: Tab[] = ["accounts", "performance", "dividends"];
 
 export type Portfolio = { id: number; name: string; updatedAt: string; holdings: Holding[] };
-export type Search = { tab?: string; base?: string; view?: string; period?: string; benchmark?: string };
+export type Search = { tab?: string; base?: string; view?: string; period?: string; benchmark?: string; rebalance?: string };
+
+/** The Rebalance tab's settings, passed to the Analyst tab in the URL; anything malformed is ignored. */
+function rebalanceFrom(raw: string | undefined): RebalanceOptions | null {
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw);
+    const ok = ["Holding", "Sector", "Currency"].includes(o?.groupBy) && typeof o.scope === "string" && typeof o.cash === "number"
+      && typeof o.buyOnly === "boolean" && typeof o.fractional === "boolean" && o.targets && typeof o.targets === "object";
+    return ok ? o : null;
+  } catch {
+    return null;
+  }
+}
 
 async function attempt<T>(load: () => Promise<T>): Promise<{ data?: T; error?: string }> {
   try {
@@ -122,7 +137,11 @@ export async function Dashboard({ portfolio, search, analysis = null, path = `/p
               {tab === "allocation" && <AllocationView figures={figures} view={view} href={href} />}
               {tab === "gain-loss" && <GainLossView figures={figures} editHref={editHref} />}
               {tab === "positions" && <PositionsView figures={figures} />}
-              {tab === "analyst" && <Analyst portfolioId={portfolio.id} base={base} period={period} benchmark={benchmark} saved={analysis} />}
+              {tab === "rebalance" && <Rebalancer holdings={portfolio.holdings} base={base} analystPath={href({ tab: "analyst" })} />}
+              {tab === "analyst" && (
+                <Analyst portfolioId={portfolio.id} base={base} period={period} benchmark={benchmark} saved={analysis}
+                  rebalance={rebalanceFrom(search.rebalance)} withoutRebalance={href({ tab: "analyst" })} />
+              )}
               {ANALYTICS_TABS.includes(tab) && (
                 <Suspense key={`${tab}|${base}|${period}|${benchmark}`} fallback={<AnalyticsSkeleton />}>
                   <AnalyticsTab tab={tab} holdings={portfolio.holdings} figures={figures} meta={meta} period={period} benchmark={benchmark} href={href} editHref={editHref} />
