@@ -1,6 +1,6 @@
 // The tables the Streamlit app (db.py) created in Neon, unchanged, so saved portfolios carry over.
 // Timestamps are ISO 8601 UTC text, as db.py writes them; they sort correctly as text.
-import { bigint, doublePrecision, index, integer, pgTable, text, unique } from "drizzle-orm/pg-core";
+import { bigint, doublePrecision, index, integer, jsonb, pgTable, text, unique } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(), // Clerk user id
@@ -35,4 +35,22 @@ export const holdings = pgTable(
     account: text("account"),
   },
   (t) => [index("ix_holdings_portfolio").on(t.portfolioId)],
+);
+
+// AI analyst runs: the prompt built from the portfolio's figures, and the conversation as AI SDK UI
+// messages (the first user message is the question as typed; the model saw `prompt` in its place).
+export const analyses = pgTable(
+  "analyses",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    portfolioId: bigint("portfolio_id", { mode: "number" }).notNull().references(() => portfolios.id, { onDelete: "cascade" }),
+    model: text("model").notNull(),
+    base: text("base").notNull(),
+    prompt: text("prompt").notNull(),
+    messages: jsonb("messages").notNull().$type<unknown[]>(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("ix_analyses_portfolio").on(t.portfolioId, t.userId)],
 );

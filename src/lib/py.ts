@@ -18,32 +18,49 @@ async function baseUrl() {
   return `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
 }
 
-export async function py<T>(path: string, body?: unknown): Promise<T> {
-  const token = await (await auth()).getToken();
-  const h: Record<string, string> = { Accept: "application/json" };
-  if (token) h.Authorization = `Bearer ${token}`;
-  if (body !== undefined) h["Content-Type"] = "application/json";
+export type PyCall = <T>(path: string, body?: unknown) => Promise<T>;
+
+/**
+ * A caller bound to this request's user, usable after the request's own context is gone (e.g. by the
+ * analyst's tools while a response streams). Session tokens are short-lived, so each call asks Clerk
+ * for a current one.
+ */
+export async function pyClient(): Promise<PyCall> {
+  const session = await auth();
+  const base = await baseUrl();
+  const fixed: Record<string, string> = { Accept: "application/json" };
   // Preview deployments sit behind Vercel's login. Passing on the visitor's cookies (Vercel's _vercel_jwt
   // among them) lets this server call itself as that visitor; the bypass secret works when it's set up.
   const cookie = (await headers()).get("cookie");
-  if (cookie) h.Cookie = cookie;
-  if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) h["x-vercel-protection-bypass"] = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
-  let res: Response;
-  try {
-    res = await fetch(`${await baseUrl()}/api/py${path}`, {
-      method: body === undefined ? "GET" : "POST",
-      headers: h,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      cache: "no-store",
-    });
-  } catch {
-    throw new PyError("The market data service isn't reachable. Locally, start it with `npm run dev:api`.", 503);
-  }
-  if (!res.ok) {
-    const detail = await res.json().then((j) => (typeof j?.detail === "string" ? j.detail : null)).catch(() => null);
-    throw new PyError(detail ?? `The market data service answered ${res.status}.`, res.status);
-  }
-  return res.json() as Promise<T>;
+  if (cookie) fixed.Cookie = cookie;
+  if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) fixed["x-vercel-protection-bypass"] = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
+  return async <T,>(path: string, body?: unknown): Promise<T> => {
+    const h = { ...fixed };
+    const token = await session.getToken();
+    if (token) h.Authorization = `Bearer ${token}`;
+    if (body !== undefined) h["Content-Type"] = "application/json";
+    let res: Response;
+    try {
+      res = await fetch(`${base}/api/py${path}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: h,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        cache: "no-store",
+      });
+    } catch {
+      throw new PyError("The market data service isn't reachable. Locally, start it with `npm run dev:api`.", 503);
+    }
+    if (!res.ok) {
+      const detail = await res.json().then((j) => (typeof j?.detail === "string" ? j.detail : null)).catch(() => null);
+      throw new PyError(detail ?? `The market data service answered ${res.status}.`, res.status);
+    }
+    return res.json() as Promise<T>;
+  };
+}
+
+export async function py<T>(path: string, body?: unknown): Promise<T> {
+  return (await pyClient())<T>(path, body);
 }
 
 export type Base = "CAD" | "USD";

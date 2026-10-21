@@ -8,6 +8,7 @@ import { date, money, pct } from "@/lib/format";
 import {
   AccountsView, AllocationView, ALLOCATION_VIEWS, AnalyticsSkeleton, DividendsView, GainLossView, PerformanceView, PositionsView,
 } from "./views";
+import { Analyst, type SavedAnalysis } from "./Analyst";
 
 const TABS = [
   { key: "allocation", label: "Allocation" },
@@ -16,6 +17,7 @@ const TABS = [
   { key: "performance", label: "Performance & risk" },
   { key: "dividends", label: "Dividends" },
   { key: "positions", label: "Positions" },
+  { key: "analyst", label: "Analyst" },
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
 const ANALYTICS_TABS: Tab[] = ["accounts", "performance", "dividends"];
@@ -45,7 +47,9 @@ async function AnalyticsTab({ tab, holdings, figures, meta, period, benchmark, h
 }
 
 /** A saved portfolio's live dashboard: header, totals, and the tab chosen in `search`. */
-export async function Dashboard({ portfolio, search, path = `/portfolios/${portfolio.id}` }: { portfolio: Portfolio; search: Search; path?: string }) {
+export async function Dashboard({ portfolio, search, analysis = null, path = `/portfolios/${portfolio.id}` }: {
+  portfolio: Portfolio; search: Search; analysis?: SavedAnalysis | null; path?: string;
+}) {
 
   const base: Base = search.base === "USD" ? "USD" : "CAD";
   const tab: Tab = TABS.some((t) => t.key === search.tab) ? (search.tab as Tab) : "allocation";
@@ -118,6 +122,7 @@ export async function Dashboard({ portfolio, search, path = `/portfolios/${portf
               {tab === "allocation" && <AllocationView figures={figures} view={view} href={href} />}
               {tab === "gain-loss" && <GainLossView figures={figures} editHref={editHref} />}
               {tab === "positions" && <PositionsView figures={figures} />}
+              {tab === "analyst" && <Analyst portfolioId={portfolio.id} base={base} period={period} benchmark={benchmark} saved={analysis} />}
               {ANALYTICS_TABS.includes(tab) && (
                 <Suspense key={`${tab}|${base}|${period}|${benchmark}`} fallback={<AnalyticsSkeleton />}>
                   <AnalyticsTab tab={tab} holdings={portfolio.holdings} figures={figures} meta={meta} period={period} benchmark={benchmark} href={href} editHref={editHref} />
