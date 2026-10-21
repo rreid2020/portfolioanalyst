@@ -20,7 +20,7 @@ Adapted from [`simple_ai_agents/stock_portfolio_analyst`](https://github.com/Ari
 - **Framework**: [Agno](https://www.agno.com/)
 - **Inference**: [Vercel AI Gateway](https://vercel.com/ai-gateway) (OpenAI-compatible endpoint)
 - **Tools**: `YFinanceTools`, `DuckDuckGoTools`, `CalculatorTools`
-- **UI**: Streamlit
+- **UI**: Streamlit, themed to match the Axiom apps (navy sidebar, teal accent, Inter) through `.streamlit/config.toml` and `branding.py`
 
 ## 📋 Prerequisites
 

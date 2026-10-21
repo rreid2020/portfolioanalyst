@@ -4,3 +4,33 @@ toolbarMode = "viewer"
 
 [browser]
 gatherUsageStats = false
+
+# Axiom app family look (matches projectcost.axiomft.ca): navy brand panel,
+# teal accent, light gray canvas with white cards, Inter.
+[theme]
+base = "light"
+primaryColor = "#0E7C86"
+backgroundColor = "#F2F4F7"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0F172A"
+linkColor = "#0E7C86"
+linkUnderline = false
+borderColor = "#DCE2EA"
+showWidgetBorder = true
+showSidebarBorder = false
+baseRadius = "6px"
+buttonRadius = "6px"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFontWeights = [700, 700, 700, 600, 600, 600]
+headingFontSizes = ["1.75rem", "1.375rem", "1.125rem", "1rem", "0.875rem", "0.75rem"]
+dataframeHeaderBackgroundColor = "#F6F7F9"
+dataframeHeaderTextColor = "#475569"
+
+[theme.sidebar]
+primaryColor = "#7FC7CF"
+backgroundColor = "#00204A"
+secondaryBackgroundColor = "#0B2D5B"
+textColor = "#DBE6F2"
+linkColor = "#7FC7CF"
+borderColor = "#24456F"

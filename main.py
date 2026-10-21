@@ -12,6 +12,7 @@ from agno.tools.yfinance import YFinanceTools
 from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.tools.calculator import CalculatorTools
 
+import branding
 import brokerage_sync
 from portfolio_import import COLUMNS, read_holdings, template_csv
 
@@ -247,18 +248,20 @@ def brokerage_panel() -> None:
 
 def main() -> None:
     st.set_page_config(
-        page_title="Stock Portfolio Analyst",
-        page_icon="📈",
+        page_title="Portfolio Analyst by Axiom",
+        page_icon=":material/monitoring:",
         layout="wide",
     )
-
-    st.title("📈 Stock Portfolio Analyst")
-    st.caption(
-        "Agno agent + Vercel AI Gateway + YFinance + DuckDuckGo + Calculator"
+    branding.apply()
+    branding.page_header(
+        "Portfolio review",
+        "Add or import your holdings, then let the analyst review valuation, "
+        "risk and rebalancing.",
     )
 
     with st.sidebar:
-        st.header("⚙️ Settings")
+        branding.sidebar_brand()
+        branding.eyebrow("Settings")
         model_id = st.selectbox(
             "Model (via Vercel AI Gateway)",
             [
@@ -275,8 +278,9 @@ def main() -> None:
         st.markdown(
             "Get a key at [Vercel AI Gateway](https://vercel.com/ai-gateway)."
         )
+        branding.sidebar_facts()
 
-    st.subheader("Your Holdings")
+    st.subheader("Your holdings")
     if "holdings" not in st.session_state:
         st.session_state.holdings = pd.DataFrame(
             [
@@ -288,7 +292,7 @@ def main() -> None:
         )
         st.session_state.editor_version = 0
 
-    with st.expander("📂 Import from CSV or Excel", expanded=False):
+    with st.expander("Import from CSV or Excel", icon=":material/upload_file:", expanded=False):
         st.markdown(
             "Upload a holdings export from your broker (e.g. Wealthsimple "
             "**Documents → Holdings report (CSV)**) or your own sheet. Columns "
@@ -323,13 +327,15 @@ def main() -> None:
 
     if brokerage_sync.is_configured():
         restore_brokerage_user()
-        with st.expander("🔗 Connect brokerage", expanded=BROKERAGE_PARAM in st.query_params):
+        with st.expander(
+            "Connect brokerage", icon=":material/link:", expanded=BROKERAGE_PARAM in st.query_params
+        ):
             brokerage_panel()
 
     edited = st.data_editor(
         st.session_state.holdings,
         num_rows="dynamic",
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         key=f"portfolio_editor_{st.session_state.editor_version}",
     )
@@ -343,7 +349,7 @@ def main() -> None:
         height=100,
     )
 
-    if st.button("Analyze Portfolio", type="primary"):
+    if st.button("Analyze portfolio", type="primary"):
         holdings = parse_portfolio(edited.to_dict("records"))
         if not holdings:
             st.error("Add at least one holding with a ticker and shares > 0.")
@@ -355,10 +361,10 @@ def main() -> None:
         agent = build_agent(model_id)
         prompt = format_prompt(holdings, question)
 
-        with st.spinner("Crunching your portfolio..."):
+        with st.spinner("Reviewing your portfolio..."):
             response = agent.run(prompt)
 
-        st.markdown("### 📊 Analyst Report")
+        st.subheader("Analyst report")
         st.markdown(getattr(response, "content", str(response)))
 
 

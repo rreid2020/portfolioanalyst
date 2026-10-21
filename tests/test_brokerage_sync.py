@@ -300,7 +300,7 @@ class StreamlitUITest(unittest.TestCase):
 
     def test_expander_hidden_without_keys(self):
         app = self.run_app({})
-        self.assertNotIn("🔗 Connect brokerage", [e.label for e in app.expander])
+        self.assertNotIn("Connect brokerage", [e.label for e in app.expander])
 
     def test_connect_and_load_holdings(self):
         client = fake_client()
@@ -309,7 +309,7 @@ class StreamlitUITest(unittest.TestCase):
             from streamlit.testing.v1 import AppTest
 
             app = AppTest.from_file(str(ROOT / "main.py"), default_timeout=60).run()
-            self.assertIn("🔗 Connect brokerage", [e.label for e in app.expander])
+            self.assertIn("Connect brokerage", [e.label for e in app.expander])
             load = next(b for b in app.button if b.label == "Load holdings")
             self.assertTrue(load.disabled)
 
