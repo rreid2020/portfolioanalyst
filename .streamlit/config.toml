@@ -26,6 +26,7 @@ headingFontWeights = [700, 700, 700, 600, 600, 600]
 headingFontSizes = ["1.75rem", "1.375rem", "1.125rem", "1rem", "0.875rem", "0.75rem"]
 dataframeHeaderBackgroundColor = "#F6F7F9"
 dataframeHeaderTextColor = "#475569"
+metricValueFontSize = "1.75rem"
 
 [theme.sidebar]
 primaryColor = "#7FC7CF"

@@ -290,6 +290,14 @@ def fake_client():
 
 
 class StreamlitUITest(unittest.TestCase):
+    def setUp(self):
+        # Keep the dashboard offline: no live quotes, so nothing is priced.
+        import portfolio_metrics
+
+        patcher = mock.patch.object(portfolio_metrics, "fetch_quotes", side_effect=lambda tickers: dict.fromkeys(tickers))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def run_app(self, env):
         from streamlit.testing.v1 import AppTest
 

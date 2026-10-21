@@ -14,6 +14,8 @@ from agno.tools.calculator import CalculatorTools
 
 import branding
 import brokerage_sync
+import dashboard
+import portfolio_metrics
 from portfolio_import import COLUMNS, read_holdings, template_csv
 
 load_dotenv()
@@ -30,22 +32,22 @@ INSTRUCTIONS = """You are an expert Stock Portfolio Analyst.
 Your job is to analyze a user's stock portfolio and produce a clear,
 actionable report. For every portfolio you receive, you should:
 
-1. Fetch live data for each ticker using YFinanceTools
-   (stock_price, stock_fundamentals, analyst_recommendations,
-    company_news, historical_prices).
-2. Compute each position's current market value and the overall
-   portfolio value using CalculatorTools. Then compute each
-   position's weight (%) in the portfolio.
-3. Compute each position's unrealized P/L in absolute dollars and as
-   a percentage versus the user-provided average buy price. If the
-   average buy price is "unknown", skip P/L for that position.
-   Average buy prices are in the Currency column. When it differs from
-   the currency the ticker trades in (e.g. a US stock with a CAD cost),
-   convert before comparing, report portfolio totals in one currency,
-   and state the FX rate you used. Tickers ending in .TO, .V, .NE or
-   .CN are Canadian listings.
-4. Summarize portfolio-level metrics: total cost basis, total market
-   value, total unrealized P/L, and sector/asset concentration.
+1. The message includes figures already computed in code from live
+   quotes: each position's price, market value, cost, unrealized P/L,
+   weight, sector and country, portfolio totals in one base currency,
+   the FX rates used, and allocation by sector, country and currency.
+   Treat these figures as authoritative. Quote them; do not re-fetch
+   prices or recompute them. Tickers ending in .TO, .V, .NE or .CN are
+   Canadian listings.
+2. Use YFinanceTools for what the figures don't cover:
+   stock_fundamentals, analyst_recommendations, company_news and
+   historical_prices. Use stock_price only for tickers listed as having
+   no live price. Use CalculatorTools for any additional math.
+3. Where the figures have no P/L for a position (unknown average buy
+   price), say so rather than estimating one.
+4. Summarize portfolio-level metrics from the figures: total cost basis,
+   total market value, total unrealized P/L, and sector, country and
+   currency concentration.
 5. Call out risk flags: over-concentration in a single ticker or
    sector, high P/E relative to peers, recent negative news, or
    weak analyst sentiment. Use DuckDuckGoTools when you need broader
@@ -115,21 +117,25 @@ def parse_portfolio(rows):
                 "ticker": ticker,
                 "shares": shares,
                 "avg_price": avg_price,
-                "currency": currency or "USD",
+                # Blank means the cost is in the currency the ticker trades in.
+                "currency": currency or None,
             }
         )
     return holdings
 
 
-def format_prompt(holdings, question: str) -> str:
+def format_prompt(holdings, question: str, figures=None) -> str:
     lines = ["Here is my current stock portfolio:", ""]
     lines.append("| Ticker | Shares | Avg Buy Price | Currency |")
     lines.append("|--------|--------|---------------|----------|")
     for h in holdings:
         avg = h["avg_price"] if h["avg_price"] is not None else "unknown"
+        currency = h["currency"] or "same as listing"
         lines.append(
-            f"| {h['ticker']} | {h['shares']} | {avg} | {h['currency']} |"
+            f"| {h['ticker']} | {h['shares']} | {avg} | {currency} |"
         )
+    if figures is not None:
+        lines += ["", portfolio_metrics.to_markdown(figures)]
     lines.append("")
     lines.append(question.strip() or "Analyze my portfolio end-to-end.")
     return "\n".join(lines)
@@ -273,6 +279,11 @@ def main() -> None:
             ],
             index=0,
         )
+        base = st.selectbox(
+            "Report currency",
+            portfolio_metrics.BASE_CURRENCIES,
+            help="Totals, charts and the analyst's report use this currency.",
+        )
         if not os.getenv("AI_GATEWAY_API_KEY"):
             st.warning("Set AI_GATEWAY_API_KEY in your .env file.")
         st.markdown(
@@ -339,6 +350,12 @@ def main() -> None:
         hide_index=True,
         key=f"portfolio_editor_{st.session_state.editor_version}",
     )
+    holdings = parse_portfolio(edited.to_dict("records"))
+    figures = None
+    if holdings:
+        with st.spinner("Fetching live prices..."):
+            figures = dashboard.load_figures(holdings, base)
+        dashboard.render(figures)
 
     question = st.text_area(
         "What would you like the analyst to focus on?",
@@ -350,7 +367,6 @@ def main() -> None:
     )
 
     if st.button("Analyze portfolio", type="primary"):
-        holdings = parse_portfolio(edited.to_dict("records"))
         if not holdings:
             st.error("Add at least one holding with a ticker and shares > 0.")
             return
@@ -359,7 +375,7 @@ def main() -> None:
             return
 
         agent = build_agent(model_id)
-        prompt = format_prompt(holdings, question)
+        prompt = format_prompt(holdings, question, figures)
 
         with st.spinner("Reviewing your portfolio..."):
             response = agent.run(prompt)
