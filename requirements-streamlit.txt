@@ -1,0 +1,7 @@
+# The Streamlit app (main.py, asgi.py), kept running until the Next.js app replaces it.
+-r requirements.txt
+agno<2
+openai
+streamlit>=1.66
+markdown
+Authlib>=1.3.2

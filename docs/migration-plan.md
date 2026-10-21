@@ -1,6 +1,6 @@
 # Migration plan: Streamlit → Next.js
 
-Status: Phase 0 (Python API) done on branch `nextjs-migration`; Phase 1 next. Written 2026-10-21 against commit `29cf95f`.
+Status: Phases 0 (Python API) and 1 (Next.js shell, Clerk, saved portfolios) done on branch `nextjs-migration`, using Clerk development keys on a vercel.app URL for now; Phase 2 next. Still to confirm: that the Streamlit app's saved `users.id` values are Clerk user ids (`user_...`). Written 2026-10-21 against commit `29cf95f`.
 
 ## Recommendation (short version)
 

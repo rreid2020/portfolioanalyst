@@ -46,9 +46,9 @@ Adapted from [`simple_ai_agents/stock_portfolio_analyst`](https://github.com/Ari
 cd simple_ai_agents/stock_portfolio_analyst
 
 # Install dependencies
-pip install -r requirements.txt
+pip install -r requirements-streamlit.txt
 # or
-uv pip install -r requirements.txt
+uv pip install -r requirements-streamlit.txt
 
 # Configure your API key
 cp .env.example .env
@@ -191,12 +191,42 @@ Positions are read with `get_all_account_positions`. SnapTrade's older `get_user
 6. Read the report as it streams in: holdings table with live prices and P/L, portfolio-level metrics, risk flags, and 3–5 rebalancing recommendations.
 7. Ask follow-up questions in the box under the report, and download it as Markdown or HTML (open the HTML file and print it to save a PDF). The report and conversation last for the browser session.
 
+## ⚛️ Next.js app (replacing Streamlit)
+
+The new frontend (Next.js App Router, Clerk, Drizzle) lives in `src/`, set up like ProjectCost. It talks to the Python API below for market data and keeps saved portfolios in the same Neon tables, so portfolios saved in the Streamlit app show up in both. Progress and the remaining phases are in [docs/migration-plan.md](docs/migration-plan.md).
+
+```bash
+npm install
+cp .env.example .env.local   # then fill in the Clerk keys (development keys from ProjectCost's Clerk instance)
+npm run db:migrate           # creates the tables in a local PGlite database (.data/pglite) when DATABASE_URL is unset
+npm run dev:api              # the Python API on :8000 (needs pip install -r requirements.txt)
+npm run dev                  # the app on http://localhost:3001, which forwards /api/py to :8000
+npm test                     # saved-portfolio tests (Vitest, in-memory PGlite)
+```
+
+Sign-in is Clerk's own `<SignIn/>` and `<SignUp/>` form inside the page (`/sign-in`, `/sign-up`); every other page needs a signed-in user (`src/middleware.ts`).
+
+### Deploy as a new Vercel project
+
+Create a separate Vercel project from this repository's `nextjs-migration` branch, so the Streamlit project keeps serving production until the new app matches it. `vercel.json` builds Next.js, runs the database migration first, and deploys `api/index.py` as a Python function under `/api/py`. Environment variables:
+
+| Variable | Value |
+|---|---|
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | the Clerk instance's keys (development keys for now) |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | `/sign-in`, `/sign-up` |
+| `DATABASE_URL` | the same Neon database as the Streamlit project (pooled connection string) |
+| `CLERK_ISSUER_URL` or `CLERK_JWT_KEY` | for the Python API to verify session tokens (see below) |
+| `CLERK_AUTHORIZED_PARTIES` | optional: the app's URL |
+| `AI_GATEWAY_API_KEY`, `SNAPTRADE_*` | as for the Streamlit app, once the analyst and brokerage pages arrive |
+
+If the project uses Vercel's Deployment Protection, turn on "Protection Bypass for Automation" so server-side calls to `/api/py` get through (`VERCEL_AUTOMATION_BYPASS_SECRET`).
+
 ## 🔌 HTTP API (for the Next.js frontend)
 
 The app is moving to a Next.js frontend ([docs/migration-plan.md](docs/migration-plan.md)). The portfolio logic is served to it as a stateless FastAPI app, `api/index.py`, under `/api/py`; the Streamlit app keeps working alongside it and shares the same steps through `portfolio_service.py`.
 
 ```bash
-pip install -r requirements-api.txt
+pip install -r requirements.txt
 uvicorn api.index:app --reload --port 8000
 # interactive docs: http://localhost:8000/api/py/docs
 ```

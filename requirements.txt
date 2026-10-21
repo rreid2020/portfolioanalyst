@@ -1,15 +1,14 @@
-agno<2
-openai
-streamlit>=1.66
+# The Python API (api/index.py) that Vercel deploys beside the Next.js app.
+# The Streamlit app needs requirements-streamlit.txt on top of this.
+fastapi>=0.115
+python-multipart
+pyjwt[crypto]>=2.9
 python-dotenv
+pandas
+numpy
 yfinance
 ddgs
 openpyxl
 snaptrade-python-sdk>=13
 cryptography
-markdown
-Authlib>=1.3.2
 pg8000>=1.31
-fastapi>=0.115
-python-multipart
-pyjwt[crypto]>=2.9

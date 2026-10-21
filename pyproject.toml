@@ -1,26 +1,24 @@
 [project]
 name = "stock-portfolio-analyst"
 version = "0.1.0"
-description = "Agno + Vercel AI Gateway stock portfolio analyst with live market data"
+description = "Portfolio by Axiom: the Python API behind the Next.js app, and the original Streamlit app"
 readme = "README.md"
 requires-python = ">=3.11"
+# Same as requirements.txt: what the API on Vercel needs.
 dependencies = [
-    "agno<2",
-    "openai",
-    "streamlit>=1.66",
+    "fastapi>=0.115",
+    "python-multipart",
+    "pyjwt[crypto]>=2.9",
     "python-dotenv",
+    "pandas",
+    "numpy",
     "yfinance",
     "ddgs",
     "openpyxl",
     "snaptrade-python-sdk>=13",
     "cryptography",
-    "markdown",
-    "Authlib>=1.3.2",
     "pg8000>=1.31",
-    "fastapi>=0.115",
-    "python-multipart",
-    "pyjwt[crypto]>=2.9",
 ]
 
-[tool.vercel]
-entrypoint = "asgi:app"
+[project.optional-dependencies]
+streamlit = ["agno<2", "openai", "streamlit>=1.66", "markdown", "Authlib>=1.3.2"]
