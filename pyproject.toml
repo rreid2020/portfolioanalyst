@@ -12,6 +12,7 @@ dependencies = [
     "yfinance",
     "ddgs",
     "openpyxl",
+    "snaptrade-python-sdk>=13",
 ]
 
 [tool.vercel]

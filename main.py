@@ -11,6 +11,7 @@ from agno.tools.yfinance import YFinanceTools
 from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.tools.calculator import CalculatorTools
 
+import brokerage_sync
 from portfolio_import import COLUMNS, read_holdings, template_csv
 
 load_dotenv()
@@ -129,6 +130,86 @@ def format_prompt(holdings, question: str) -> str:
     return "\n".join(lines)
 
 
+def disconnect_brokerage(client) -> None:
+    """Delete this session's SnapTrade user, which removes its brokerage connections."""
+    brokerage_sync.delete_user(client, st.session_state.snaptrade_user)
+    del st.session_state.snaptrade_user
+    st.session_state.pop("snaptrade_portal_url", None)
+
+
+def brokerage_panel() -> None:
+    personal = brokerage_sync.is_personal()
+    st.markdown(
+        "Pull your current holdings from Wealthsimple, Questrade, Interactive "
+        "Brokers and [other brokers SnapTrade supports]"
+        "(https://snaptrade.com/brokerage-integrations), read-only. You sign in "
+        "on SnapTrade's page; this app never sees your brokerage password and "
+        "can't place trades."
+    )
+    if not personal:
+        st.caption(
+            "The connection is kept for this browser session only, so you "
+            "reconnect on each visit."
+        )
+
+    if st.button("Open connection portal"):
+        try:
+            client = brokerage_sync.make_client()
+            if not personal and "snaptrade_user" not in st.session_state:
+                st.session_state.snaptrade_user = brokerage_sync.register_user(client)
+            st.session_state.snaptrade_portal_url = brokerage_sync.connection_portal_url(
+                client, st.session_state.get("snaptrade_user")
+            )
+        except Exception as exc:
+            st.session_state.brokerage_message = ("error", f"Couldn't reach SnapTrade: {brokerage_sync.error_message(exc)}")
+    if "snaptrade_portal_url" in st.session_state:
+        st.link_button("Sign in to your brokerage ↗", st.session_state.snaptrade_portal_url)
+        st.caption(
+            "The link expires after 5 minutes. Once your brokerage is "
+            "connected, come back here and load your holdings."
+        )
+
+    connected = personal or "snaptrade_user" in st.session_state
+    disconnect_after = not personal and st.checkbox(
+        "Disconnect after loading",
+        value=True,
+        help="Deletes the SnapTrade connection once holdings are loaded. "
+        "Uncheck it to load again later in this session.",
+    )
+    if st.button("Load holdings", disabled=not connected):
+        client = brokerage_sync.make_client()
+        try:
+            holdings, warnings = brokerage_sync.fetch_holdings(
+                client, st.session_state.get("snaptrade_user")
+            )
+        except Exception as exc:  # SnapTrade or brokerage errors shouldn't crash the app
+            st.session_state.brokerage_message = ("error", f"Couldn't load holdings: {brokerage_sync.error_message(exc)}")
+        else:
+            st.session_state.holdings = holdings
+            # A new key makes the editor drop edits made to the old table.
+            st.session_state.editor_version += 1
+            notes = [f"Loaded {len(holdings)} holding(s) from your brokerage."]
+            if disconnect_after:
+                try:
+                    disconnect_brokerage(client)
+                    notes.append("Disconnected from SnapTrade.")
+                except Exception as exc:
+                    warnings.append(f"Couldn't disconnect from SnapTrade: {brokerage_sync.error_message(exc)}")
+            st.session_state.brokerage_message = ("success", " ".join([*notes, *warnings]))
+
+    if not personal and "snaptrade_user" in st.session_state and st.button("Disconnect"):
+        try:
+            disconnect_brokerage(brokerage_sync.make_client())
+            st.session_state.brokerage_message = ("info", "Disconnected from SnapTrade.")
+        except Exception as exc:
+            st.session_state.brokerage_message = ("error", f"Couldn't disconnect: {brokerage_sync.error_message(exc)}")
+        st.rerun()
+
+    if "brokerage_message" in st.session_state:
+        kind, message = st.session_state.brokerage_message
+        getattr(st, kind)(message)
+
+
 def main() -> None:
     st.set_page_config(
         page_title="Stock Portfolio Analyst",
@@ -204,6 +285,10 @@ def main() -> None:
         if "import_message" in st.session_state:
             kind, message = st.session_state.import_message
             getattr(st, kind)(message)
+
+    if brokerage_sync.is_configured():
+        with st.expander("🔗 Connect brokerage", expanded=False):
+            brokerage_panel()
 
     edited = st.data_editor(
         st.session_state.holdings,

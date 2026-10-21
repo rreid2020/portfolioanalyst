@@ -8,6 +8,7 @@ Adapted from [`simple_ai_agents/stock_portfolio_analyst`](https://github.com/Ari
 
 - **Portfolio editor**: spreadsheet-style UI to enter/edit holdings
 - **CSV / Excel import**: upload a broker holdings export (e.g. Wealthsimple's Holdings report) or your own sheet; columns are auto-detected, positions across accounts are merged, and Canadian listings get yfinance suffixes (`SHOP` on TSX → `SHOP.TO`)
+- **Connect brokerage (optional)**: pull live holdings from Wealthsimple, Questrade, IBKR and other brokers through [SnapTrade](https://snaptrade.com/), read-only. You sign in on SnapTrade's page, so the app never sees your brokerage password
 - **Live market data**: prices, fundamentals, analyst ratings, news via YFinance
 - **Web context**: DuckDuckGo search for market news not covered by YFinance
 - **Math that adds up**: a Calculator tool keeps the agent honest on totals, weights, and P/L
@@ -25,6 +26,7 @@ Adapted from [`simple_ai_agents/stock_portfolio_analyst`](https://github.com/Ari
 
 - Python 3.11+
 - Vercel AI Gateway API key
+- Optional: SnapTrade API keys for **Connect brokerage**
 - Internet connection (for YFinance + DuckDuckGo)
 
 ## ⚡ Quick Start
@@ -66,7 +68,7 @@ The repo is ready to deploy as a Python project:
 Steps:
 
 1. Push this folder to a GitHub repo and import it in the Vercel dashboard (or run `vercel` from this folder with the Vercel CLI).
-2. In **Project → Settings → Environment Variables**, add `AI_GATEWAY_API_KEY`.
+2. In **Project → Settings → Environment Variables**, add `AI_GATEWAY_API_KEY` (and the `SNAPTRADE_*` keys to enable **Connect brokerage**).
 3. Make sure **Fluid compute** is on (default for new projects). WebSockets require it.
 4. The installed dependencies are ~540 MB, just over the 500 MB Python limit. New projects use large functions automatically; for an existing project, add the environment variable `VERCEL_SUPPORT_LARGE_FUNCTIONS=1`.
 5. Deploy, then open the preview URL and run an analysis before adding a domain.
@@ -83,12 +85,69 @@ Steps:
 - Cold starts are slow (large dependencies); the first page load after idle can take 10–20s.
 - Anyone with the URL can run analyses on your AI Gateway key. Add Vercel Deployment Protection or a password before sharing widely, and set a spend limit in AI Gateway.
 
+## 🔗 Connect brokerage (optional)
+
+The **Connect brokerage** panel loads your current positions straight from your broker through [SnapTrade](https://snaptrade.com/brokerage-integrations), which supports Wealthsimple (stocks, ETFs, crypto, mutual funds), Questrade, Interactive Brokers, and many more. Wealthsimple has no public API; SnapTrade connects with your own Wealthsimple sign-in, entered on SnapTrade's connection portal.
+
+- **Read-only.** Connections are created with `connectionType=read`, so they can't place trades.
+- **No passwords here.** You sign in on SnapTrade's page. This app only ever holds a SnapTrade user id and secret.
+- The panel is hidden until `SNAPTRADE_CLIENT_ID` and `SNAPTRADE_CONSUMER_KEY` are set.
+
+### Setup
+
+1. Sign up at [dashboard.snaptrade.com](https://dashboard.snaptrade.com/) and create API keys.
+2. Add them to `.env` (and to Vercel's environment variables when deployed):
+
+   ```bash
+   SNAPTRADE_CLIENT_ID=...
+   SNAPTRADE_CONSUMER_KEY=...
+   # Optional, see "Key types" below
+   SNAPTRADE_KEY_TYPE=commercial
+   ```
+
+3. Restart the app, open **🔗 Connect brokerage**, click **Open connection portal**, then **Sign in to your brokerage ↗**. The link expires after 5 minutes.
+4. After connecting, return to the app tab and click **Load holdings**. This replaces the holdings table, merging the same ticker across accounts (TFSA, RRSP, ...) with a share-weighted average cost.
+
+Stocks, ETFs, ADRs and closed-end funds are loaded. Canadian listings get yfinance suffixes (`SHOP` on TSX → `SHOP.TO`, `RCI.B` → `RCI-B.TO`), the same way CSV import does. Options, crypto, bonds and mutual funds are skipped with a note, because yfinance can't price them by ticker. Paper accounts are ignored.
+
+### Key types
+
+- **Commercial key** (`SNAPTRADE_KEY_TYPE=commercial`, the default): each visitor gets their own SnapTrade user. Use it for a deployed app that other people may open. New keys are test keys; production keys need SnapTrade's KYC approval.
+- **Personal key** (`SNAPTRADE_KEY_TYPE=personal`): the key belongs to your own SnapTrade account and is free. No users are registered, and **anyone who opens the app sees your holdings**. Use it only locally (`uvicorn asgi:app`) or behind Vercel Deployment Protection. SnapTrade's terms say a personal key must not be shared with other people.
+
+### How a visitor's connection is kept
+
+The app has no login, so with a commercial key:
+
+- The first **Open connection portal** click registers a SnapTrade user named `portfolio-analyst-<unix time>-<random>`. Its id and secret live only in that browser session's `st.session_state`, never on disk, in a cookie, or in the URL.
+- A visitor reconnects on each visit. On Vercel, sessions also reset when the WebSocket hits the function's max duration (5 min on Hobby), so connect and load within that window.
+- **Disconnect after loading** (on by default) deletes the SnapTrade user and its brokerage connection right after the holdings load. **Disconnect** does the same without loading.
+- Users left behind by closed tabs are deleted the next time anyone connects, once they are more than an hour old (`STALE_USER_SECONDS` in `brokerage_sync.py`). Only ids with this app's prefix are touched.
+
+### Pricing (checked October 2026)
+
+From [snaptrade.com/pricing](https://snaptrade.com/pricing):
+
+- **Build:** free, with up to 5 brokerage connections and real-time data.
+- **Launch:** $100/month plus $2 per connected user per month (real-time), or $1 per user (daily data, read-only).
+- **Personal keys:** currently free.
+
+Positions are read with `get_all_account_positions`. SnapTrade's older `get_user_holdings` endpoint returns HTTP 410 for customers who signed up after May 11, 2026.
+
 ## 💡 How to Use
 
-1. In the **Your Holdings** table, add one row per position: `Ticker`, `Shares`, `Avg Buy Price (USD)`.
+1. In the **Your Holdings** table, add one row per position: `Ticker`, `Shares`, `Avg Buy Price`, `Currency`. Or fill it from **Import from CSV or Excel** or **Connect brokerage**.
 2. Optionally tweak the focus question (e.g. _"Assess my tech concentration risk"_ or _"Which position looks most overvalued?"_).
 3. Click **Analyze Portfolio**.
 4. Read the report: holdings table with live prices and P/L, portfolio-level metrics, risk flags, and 3–5 rebalancing recommendations.
+
+## 🧪 Tests
+
+```bash
+python -m unittest discover -s tests
+```
+
+The brokerage tests replace SnapTrade's HTTP API with canned responses, so the real SDK still signs, sends and deserializes each request, and they drive the Streamlit UI with `AppTest`. They need no API keys.
 
 ## 🧠 What the Agent Does
 
