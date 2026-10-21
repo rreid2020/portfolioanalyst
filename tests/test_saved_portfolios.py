@@ -200,6 +200,26 @@ class GateTest(unittest.TestCase):
         self.assertTrue(any("Running locally without sign-in" in c.value for c in app.caption))
 
 
+class PreloadTest(unittest.TestCase):
+    def test_preload_starts_one_background_import(self):
+        with mock.patch.object(access, "_preload_started", False),                 mock.patch.object(access.threading, "Thread") as thread,                 mock.patch.object(access.importlib, "import_module") as import_module:
+            access.preload(["json", "no_such_module_xyz"])
+            access.preload(["json"])  # already started: ignored
+            self.assertEqual(thread.call_count, 1)
+            self.assertTrue(thread.call_args.kwargs["daemon"])
+            thread.call_args.kwargs["target"]()  # run it inline
+            import_module.assert_has_calls([mock.call("json"), mock.call("no_such_module_xyz")])
+
+    def test_signed_out_page_does_not_wait_for_heavy_imports(self):
+        # The gate and sign-in page must not need pandas, agno or yfinance.
+        source = (ROOT / "main.py").read_text(encoding="utf-8")
+        gate, rest = source.split("# Everything below runs only for a signed-in (or local) user.")
+        self.assertIn("access.sign_in_page()", gate)
+        for heavy in ("import pandas", "from agno", "import dashboard"):
+            self.assertNotIn(heavy, gate)
+            self.assertIn(heavy, rest)
+
+
 class SavedPortfoliosUITest(unittest.TestCase):
     def test_save_then_load_for_a_signed_in_user(self):
         from streamlit.testing.v1 import AppTest

@@ -5,8 +5,12 @@ Local: uvicorn asgi:app --port 8501
 from pathlib import Path
 
 import streamlit as st
+from dotenv import load_dotenv
 
-import auth_config
+# Before auth_config reads the sign-in settings: locally they can live in .env.
+load_dotenv()
+
+import auth_config  # noqa: E402
 
 # Sign-in settings come from environment variables (see auth_config.py); with
 # none set, st.App falls back to .streamlit/secrets.toml if there is one.

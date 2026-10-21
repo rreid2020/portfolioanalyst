@@ -1,28 +1,48 @@
-import math
-import os
-from urllib.parse import urlencode, urlsplit, urlunsplit
+"""Streamlit entry point.
 
-import pandas as pd
+The sign-in gate runs before the heavy imports below, so a signed-out visitor
+gets the sign-in page without waiting ~2-3 s for pandas, the AI agent and the
+market-data libraries. While that page is up, access.preload() imports them
+on a background thread, so they're ready when the visitor comes back from
+signing in.
+"""
 import streamlit as st
-from dotenv import load_dotenv
-
-from agno.agent import Agent
-from agno.models.openai.like import OpenAILike
-from agno.tools.yfinance import YFinanceTools
-from agno.tools.duckduckgo import DuckDuckGoTools
-from agno.tools.calculator import CalculatorTools
 
 import access
-import account_hints
-import branding
-import brokerage_sync
-import dashboard
-import db
-import portfolio_analytics
-import portfolio_metrics
-import rebalance
-import report
-from portfolio_import import ACCOUNT_TYPES, COLUMNS, normalize_account, read_holdings, template_csv
+
+st.set_page_config(page_title="Portfolio Analyst by Axiom", page_icon=":material/monitoring:", layout="wide")
+USER = access.current_user()
+if USER is None:
+    access.preload([
+        "pandas", "agno.agent", "agno.models.openai.like", "agno.tools.yfinance", "agno.tools.duckduckgo",
+        "agno.tools.calculator", "dashboard", "db", "brokerage_sync", "report", "rebalance",
+    ])
+    access.sign_in_page()  # stops the script
+
+# Everything below runs only for a signed-in (or local) user.
+import math  # noqa: E402
+import os  # noqa: E402
+from urllib.parse import urlencode, urlsplit, urlunsplit  # noqa: E402
+
+import pandas as pd  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
+
+from agno.agent import Agent  # noqa: E402
+from agno.models.openai.like import OpenAILike  # noqa: E402
+from agno.tools.yfinance import YFinanceTools  # noqa: E402
+from agno.tools.duckduckgo import DuckDuckGoTools  # noqa: E402
+from agno.tools.calculator import CalculatorTools  # noqa: E402
+
+import account_hints  # noqa: E402
+import branding  # noqa: E402
+import brokerage_sync  # noqa: E402
+import dashboard  # noqa: E402
+import db  # noqa: E402
+import portfolio_analytics  # noqa: E402
+import portfolio_metrics  # noqa: E402
+import rebalance  # noqa: E402
+import report  # noqa: E402
+from portfolio_import import ACCOUNT_TYPES, COLUMNS, normalize_account, read_holdings, template_csv  # noqa: E402
 
 load_dotenv()
 
@@ -419,15 +439,7 @@ def portfolio_manager(store, edited) -> None:
         getattr(st, kind)(message)
 
 
-def main() -> None:
-    st.set_page_config(
-        page_title="Portfolio Analyst by Axiom",
-        page_icon=":material/monitoring:",
-        layout="wide",
-    )
-    user = access.current_user()
-    if user is None:
-        access.sign_in_page()
+def main(user) -> None:
     store = portfolio_store(user)
     branding.apply()
     branding.page_header(
@@ -580,4 +592,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(USER)

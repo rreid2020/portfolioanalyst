@@ -93,7 +93,7 @@ Steps:
 ### Limits to know
 
 - Each browser tab is one WebSocket connection, which closes when the function hits `maxDuration` (5 min on Hobby). Streamlit reconnects automatically but starts a fresh session, so a report on screen is lost when that happens. An analysis must finish within that window.
-- Cold starts are slow (large dependencies); the first page load after idle can take 10–20s.
+- Cold starts are slow (large dependencies): after the function has been idle, the first page load waits for Vercel to start Python and load the packages, typically several seconds of a blank page titled "Streamlit". The sign-in page itself is kept light: `main.py` checks sign-in before importing pandas, the AI agent and the market-data libraries, and preloads those in the background while the sign-in page is up. A free uptime monitor pinging the site every few minutes keeps an instance warm if the first-load delay matters.
 - Only signed-in Axiom users can run analyses on your AI Gateway key, but anyone can create an Axiom account unless sign-ups are restricted in Clerk (for example with an allowlist). Set a spend limit in AI Gateway too.
 
 ## 🔐 Sign-in and saved portfolios

@@ -7,7 +7,9 @@
 - Not configured locally: a single local user, so development works without
   Clerk.
 """
+import importlib
 import os
+import threading
 from dataclasses import dataclass
 
 import streamlit as st
@@ -15,6 +17,25 @@ import streamlit as st
 import branding
 
 LOCAL_USER_ID = "local"
+
+_preload_started = False
+
+
+def preload(modules) -> None:
+    """Import `modules` on a background thread, once per server process."""
+    global _preload_started
+    if _preload_started:
+        return
+    _preload_started = True
+
+    def run():
+        for name in modules:
+            try:
+                importlib.import_module(name)
+            except Exception:  # the real import later reports any error
+                pass
+
+    threading.Thread(target=run, name="preload", daemon=True).start()
 
 
 @dataclass(frozen=True)
