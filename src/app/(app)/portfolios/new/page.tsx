@@ -3,9 +3,9 @@ import { HoldingsEditor } from "../HoldingsEditor";
 
 export default function NewPortfolioPage() {
   return (
-    <>
+    <div className="mx-auto max-w-7xl">
       <PageHeader title="New portfolio" subtitle="Add your holdings by hand, paste them from a spreadsheet, or import your broker's export." back={{ href: "/portfolios", label: "Portfolios" }} />
       <HoldingsEditor />
-    </>
+    </div>
   );
 }

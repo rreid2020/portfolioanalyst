@@ -9,7 +9,7 @@ import { PortfolioActions } from "./PortfolioActions";
 export default async function PortfoliosPage() {
   const saved = await listPortfolios(await requireUser());
   return (
-    <>
+    <div className="mx-auto max-w-7xl">
       <PageHeader
         title="Portfolios"
         subtitle="Your saved portfolios. Open one to see live values, performance and the analyst."
@@ -51,6 +51,6 @@ export default async function PortfoliosPage() {
           </table>
         )}
       </Card>
-    </>
+    </div>
   );
 }

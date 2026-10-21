@@ -27,13 +27,13 @@ export default async function PortfolioPage({ params, searchParams }: { params: 
   const t = figures?.totals;
 
   return (
-    <>
+    <div className="mx-auto max-w-7xl">
       <PageHeader
         title={portfolio.name}
         subtitle={`Saved ${date(portfolio.updatedAt)} · ${portfolio.holdings.length} holding${portfolio.holdings.length === 1 ? "" : "s"}`}
         back={{ href: "/portfolios", label: "Portfolios" }}
         actions={
-          <>
+          <div className="flex flex-wrap items-center gap-2">
           <Link href={`/portfolios/${portfolio.id}/edit`} className="btn btn-secondary">Edit holdings</Link>
           <div className="flex rounded-md border border-slate-300 bg-white p-0.5 text-xs font-medium" role="group" aria-label="Report currency">
             {BASES.map((b) => (
@@ -42,7 +42,7 @@ export default async function PortfolioPage({ params, searchParams }: { params: 
               </Link>
             ))}
           </div>
-          </>
+          </div>
         }
       />
 
@@ -111,6 +111,6 @@ export default async function PortfolioPage({ params, searchParams }: { params: 
           </div>
         </Card>
       )}
-    </>
+    </div>
   );
 }

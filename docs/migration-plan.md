@@ -44,8 +44,11 @@ Browser
 
 ### Decisions
 
-**Frontend: Next.js App Router + shadcn/ui + Tailwind**, matching ProjectCost
-so components, the Axiom theme and Clerk setup can be copied across.
+**Frontend: Next.js App Router + Tailwind, laid out and styled exactly like ProjectCost**
+(decided 2026-10-21): the same sign-in pages, navy sidebar, separate pages per view and
+the same UI components (`src/components/ui.tsx`), so someone using both apps sees one
+product. The dashboard, analyst and rebalancer become their own views rather than one
+long page like the Streamlit app.
 
 **Auth: Clerk's Next.js SDK with the embedded `<SignIn/>` and `<SignUp/>`**
 from the same Clerk instance as ProjectCost. This replaces the current OIDC

@@ -9,9 +9,9 @@ export default async function EditPortfolioPage({ params }: { params: Promise<{ 
   const portfolio = await loadPortfolio(await requireUser(), Number(id));
   if (!portfolio) notFound();
   return (
-    <>
+    <div className="mx-auto max-w-7xl">
       <PageHeader title={`Edit ${portfolio.name}`} back={{ href: `/portfolios/${portfolio.id}`, label: portfolio.name }} />
       <HoldingsEditor portfolio={portfolio} />
-    </>
+    </div>
   );
 }
