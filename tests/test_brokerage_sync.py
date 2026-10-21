@@ -16,6 +16,8 @@ from urllib.parse import parse_qs, urlparse
 import urllib3
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _isolation  # noqa: E402,F401  (temp database for the app)
 sys.path.insert(0, str(ROOT))
 
 import brokerage_sync  # noqa: E402

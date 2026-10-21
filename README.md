@@ -6,6 +6,8 @@ Adapted from [`simple_ai_agents/stock_portfolio_analyst`](https://github.com/Ari
 
 ## 🚀 Features
 
+- **Axiom sign-in**: everyone signs in with their Axiom account (the same Clerk login as ProjectCost) before using the app
+- **Saved portfolios**: save the holdings table under a name, then load, rename or delete it later, from any device; each person sees only their own
 - **Portfolio editor**: spreadsheet-style UI to enter/edit holdings
 - **CSV / Excel import**: upload a broker holdings export (e.g. Wealthsimple's Holdings report) or your own sheet; columns are auto-detected, each account's type is read from an account type or name column, lots in the same account are merged, and Canadian listings get yfinance suffixes (`SHOP` on TSX → `SHOP.TO`)
 - **Connect brokerage (optional)**: pull live holdings from Wealthsimple, Questrade, IBKR and other brokers through [SnapTrade](https://snaptrade.com/), read-only. You sign in on SnapTrade's page, so the app never sees your brokerage password
@@ -92,7 +94,42 @@ Steps:
 
 - Each browser tab is one WebSocket connection, which closes when the function hits `maxDuration` (5 min on Hobby). Streamlit reconnects automatically but starts a fresh session, so a report on screen is lost when that happens. An analysis must finish within that window.
 - Cold starts are slow (large dependencies); the first page load after idle can take 10–20s.
-- Anyone with the URL can run analyses on your AI Gateway key. Add Vercel Deployment Protection or a password before sharing widely, and set a spend limit in AI Gateway.
+- Only signed-in Axiom users can run analyses on your AI Gateway key, but anyone can create an Axiom account unless sign-ups are restricted in Clerk (for example with an allowlist). Set a spend limit in AI Gateway too.
+
+## 🔐 Sign-in and saved portfolios
+
+The deployed app requires sign-in. It uses Streamlit's built-in sign-in (`st.login`) with Clerk as the OpenID Connect provider, in the **same Clerk instance as ProjectCost**, so one Axiom account works in both. Saved portfolios live in Postgres (Neon). Each row belongs to the signed-in user's Clerk user id, and every query is limited to that id.
+
+**Without these settings the deployed app refuses to run** and shows "Sign-in isn't configured". Locally, with no Clerk settings, it runs as a single local user and saves portfolios to `.data/portfolios.db` (gitignored).
+
+### 1. Clerk: add an OAuth application
+
+1. In the Clerk Dashboard for the instance ProjectCost uses, open **OAuth applications → Add application**.
+2. Name it (e.g. "Portfolio Analyst") and select the scopes `openid`, `email` and `profile`.
+3. Add the redirect URI `https://<your app domain>/oauth2callback`. For local testing, also add `http://localhost:8501/oauth2callback`.
+4. Copy the **Client ID** and **Client Secret**. The secret is shown only once.
+5. Optional: turn off the consent screen for this app, since it's your own.
+6. Note the instance's **Frontend API URL** (Dashboard → Domains or API keys). It looks like `https://clerk.axiomft.ca` for a production instance, or `https://<name>.clerk.accounts.dev` for a development instance. ProjectCost's sign-in page currently shows "Development mode". If it moves to a production instance, update `CLERK_ISSUER_URL` and create the OAuth application there.
+
+### 2. Neon: add the database
+
+In the Vercel project, open **Storage** (or the Marketplace), add **Neon Postgres** and connect it to this project. Vercel adds `DATABASE_URL` to the project's environment variables. The app creates its tables on first use.
+
+### 3. Environment variables (Vercel → Project → Settings → Environment Variables)
+
+| Variable | Value |
+|---|---|
+| `CLERK_OAUTH_CLIENT_ID` | the OAuth application's Client ID |
+| `CLERK_OAUTH_CLIENT_SECRET` | its Client Secret |
+| `CLERK_ISSUER_URL` | the Frontend API URL from step 1.6 |
+| `APP_URL` | the app's public URL, e.g. `https://portfolio.axiomft.ca`. Defaults to the Vercel production URL |
+| `DATABASE_URL` | set by the Neon integration |
+| `AUTH_COOKIE_SECRET` | optional: a long random string for the session cookie. Derived from the client secret when unset |
+| `CLERK_OAUTH_PROMPT` | optional: the OIDC `prompt` sent to Clerk, default `login`. Set it to `consent` if Clerk rejects `login` |
+
+Redeploy after adding them. Sign-in sessions last 30 days (Streamlit's cookie).
+
+`asgi.py` hands these to `st.App` as programmatic secrets (`auth_config.py`), so no `secrets.toml` is needed on Vercel. With `streamlit run main.py`, put the same values in `.streamlit/secrets.toml` under `[auth]` instead, or leave them out to run as the local user.
 
 ## 🔗 Connect brokerage (optional)
 

@@ -12,10 +12,12 @@ from agno.tools.yfinance import YFinanceTools
 from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.tools.calculator import CalculatorTools
 
+import access
 import account_hints
 import branding
 import brokerage_sync
 import dashboard
+import db
 import portfolio_analytics
 import portfolio_metrics
 import rebalance
@@ -340,12 +342,93 @@ def brokerage_panel() -> None:
         getattr(st, kind)(message)
 
 
+@st.cache_resource(show_spinner=False)
+def _engine(url: str):
+    return db.make_engine(url)
+
+
+def portfolio_store(user):
+    """The signed-in user's saved portfolios, or None when no database is configured."""
+    url = db.database_url()
+    if url is None:
+        return None
+    store = db.Store(_engine(url), user.id)
+    if st.session_state.get("store_user") != user.id:
+        store.touch_user(email=user.email, name=user.name)
+        st.session_state.store_user = user.id
+    return store
+
+
+def load_portfolio(table) -> None:
+    st.session_state.holdings = table
+    # A new key makes the editor drop edits made to the old table.
+    st.session_state.editor_version += 1
+
+
+def portfolio_manager(store, edited) -> None:
+    """Save, load, rename and delete saved portfolios (sidebar)."""
+    branding.eyebrow("Saved portfolios")
+    if store is None:
+        st.caption("Saving needs a database: set DATABASE_URL (Neon on Vercel). See the README.")
+        return
+    saved = store.list()
+    names = {pid: name for pid, name, _ in saved}
+    if saved:
+        selected = st.selectbox(
+            "Portfolio", list(names), format_func=names.get, key="saved_portfolio", label_visibility="collapsed"
+        )
+        actions = st.container(horizontal=True)
+        if actions.button("Load", icon=":material/folder_open:", key="load_portfolio"):
+            table = store.load(selected)
+            if table is not None:
+                load_portfolio(table)
+                st.session_state.portfolio_message = ("success", f'Loaded "{names[selected]}".')
+                st.session_state.portfolio_name = names[selected]
+                st.rerun()
+        with actions.popover("Rename", icon=":material/edit:"):
+            new_name = st.text_input("New name", value=names[selected], key=f"rename_{selected}")
+            if st.button("Rename", key="rename_portfolio"):
+                try:
+                    store.rename(selected, new_name)
+                    st.session_state.portfolio_message = ("success", f'Renamed to "{new_name.strip()}".')
+                except db.PortfolioNameError as exc:
+                    st.session_state.portfolio_message = ("error", str(exc))
+                st.rerun()
+        with actions.popover("Delete", icon=":material/delete:"):
+            st.caption(f'Delete "{names[selected]}"? This can\'t be undone.')
+            if st.button("Delete", type="primary", key="delete_portfolio"):
+                store.delete(selected)
+                st.session_state.portfolio_message = ("success", f'Deleted "{names[selected]}".')
+                st.rerun()
+    else:
+        st.caption("No saved portfolios yet. Save the holdings table to come back to it later.")
+
+    name = st.text_input("Save current holdings as", value=st.session_state.get("portfolio_name", ""),
+                         placeholder="e.g. Family TFSA", key="save_name")
+    if st.button("Save", icon=":material/save:", key="save_portfolio", type="primary"):
+        try:
+            _, replaced = store.save(name, edited)
+            st.session_state.portfolio_name = name.strip()
+            verb = "Updated" if replaced else "Saved"
+            st.session_state.portfolio_message = ("success", f'{verb} "{name.strip()}".')
+        except db.PortfolioNameError as exc:
+            st.session_state.portfolio_message = ("error", str(exc))
+        st.rerun()
+    if "portfolio_message" in st.session_state:
+        kind, message = st.session_state.pop("portfolio_message")
+        getattr(st, kind)(message)
+
+
 def main() -> None:
     st.set_page_config(
         page_title="Portfolio Analyst by Axiom",
         page_icon=":material/monitoring:",
         layout="wide",
     )
+    user = access.current_user()
+    if user is None:
+        access.sign_in_page()
+    store = portfolio_store(user)
     branding.apply()
     branding.page_header(
         "Portfolio review",
@@ -377,7 +460,10 @@ def main() -> None:
         st.markdown(
             "Get a key at [Vercel AI Gateway](https://vercel.com/ai-gateway)."
         )
+        # Filled in after the holdings editor, which it saves from.
+        portfolios_slot = st.container()
         branding.sidebar_facts()
+        access.account_menu(user)
 
     st.subheader("Your holdings")
     if "holdings" not in st.session_state:
@@ -444,6 +530,8 @@ def main() -> None:
             ),
         },
     )
+    with portfolios_slot:
+        portfolio_manager(store, edited)
     holdings = parse_portfolio(edited.to_dict("records"))
     figures = performance = dividends = None
     hints = []

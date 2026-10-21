@@ -8,3 +8,6 @@ openpyxl
 snaptrade-python-sdk>=13
 cryptography
 markdown
+Authlib>=1.3.2
+SQLAlchemy>=2
+psycopg[binary]>=3.2

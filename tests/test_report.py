@@ -12,6 +12,8 @@ from agno.models.response import ToolExecution
 from agno.run.response import RunResponseContentEvent, RunResponseErrorEvent, ToolCallStartedEvent
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _isolation  # noqa: E402,F401  (temp database for the app)
 sys.path.insert(0, str(ROOT))
 
 import portfolio_metrics  # noqa: E402

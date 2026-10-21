@@ -84,3 +84,31 @@ def page_header(title: str, subtitle: str) -> None:
 
 def eyebrow(text: str) -> None:
     st.html(f'<div class="ax-eyebrow">{text}</div>')
+
+
+# Sign-in page: the brand panel on the left, the sign-in button on the right,
+# no sidebar, like the ProjectCost sign-in page.
+SIGN_IN_STYLE = f"""<style>
+[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {{ display: none; }}
+.ax-signin {{ background: {NAVY}; border-radius: 12px; padding: 44px 44px 36px; min-height: 68vh;
+             display: flex; flex-direction: column; justify-content: space-between; }}
+.ax-signin .ax-tagline h2 {{ font-size: 2.25rem; }}
+.ax-signin .ax-tagline p {{ font-size: 0.95rem; max-width: 34rem; }}
+</style>"""
+
+
+def sign_in_panel() -> str:
+    return f"""<div class="ax-signin">
+<div class="ax-brand">{LOGO_IMG}<span>PORTFOLIO <em>by Axiom</em></span></div>
+<div class="ax-tagline">
+<h2>Know where every position stands.</h2>
+<p>Live prices, performance, dividends and account-by-account views of the holdings you
+already have, with an AI analyst to review them. Read-only: nothing here places trades.</p>
+</div>
+<dl class="ax-facts">
+<div><dt>Sources</dt><dd>Wealthsimple, Questrade, IBKR, CSV, Excel</dd></div>
+<div><dt>Output</dt><dd>Valuation, risk, dividends, rebalancing</dd></div>
+<div><dt>Accounts</dt><dd>TFSA, RRSP, FHSA, non-registered</dd></div>
+<div><dt>Access</dt><dd>Your Axiom account</dd></div>
+</dl>
+</div>"""
