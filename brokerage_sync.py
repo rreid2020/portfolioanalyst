@@ -4,18 +4,22 @@ The visitor signs in to their brokerage on SnapTrade's connection portal; this
 app never sees brokerage credentials. Connections are requested with
 connection_type="read", so they can't place trades.
 
-Identity. The app has no login, so each Streamlit session registers its own
-SnapTrade user and keeps the user id and secret only in st.session_state.
-Nothing is written to disk, a cookie or the URL, so a visitor reconnects on
-each visit (and on Vercel, whenever the WebSocket session is recycled).
-SnapTrade users are deleted after holdings are loaded (by default) or on
-"Disconnect"; users left behind by closed tabs are deleted on the next
-registration once they are older than STALE_USER_SECONDS.
+Identity. The app has no login, so each visitor gets their own SnapTrade
+user. Its id and secret are kept in st.session_state and, encrypted with a
+key derived from SNAPTRADE_CONSUMER_KEY (seal_user), in the page URL. The URL
+copy lets a session that Vercel recycled mid-sign-in, or the portal's
+redirect back to the app, pick the user up again. Tokens expire after
+STALE_USER_SECONDS. Nothing is written to disk or a cookie, so a visitor
+reconnects on each visit. SnapTrade users are deleted after holdings are
+loaded (by default) or on "Disconnect"; users left behind by closed tabs are
+deleted on the next registration once they are older than STALE_USER_SECONDS.
 
 With SNAPTRADE_KEY_TYPE=personal the keys belong to one person's SnapTrade
 account: no users are registered and every visitor sees that account's
 holdings. Only use it locally or behind Vercel Deployment Protection.
 """
+import base64
+import hashlib
 import json
 import os
 import time
@@ -24,6 +28,7 @@ from collections.abc import Mapping
 from decimal import Decimal
 
 import pandas as pd
+from cryptography.fernet import Fernet, InvalidToken
 from snaptrade_client import SnapTrade, SnapTradeAuth
 from snaptrade_client.exceptions import ApiException
 
@@ -128,10 +133,36 @@ def delete_user(client: SnapTrade, user) -> None:
     client.authentication.delete_snap_trade_user(user_id=user["user_id"])
 
 
-def connection_portal_url(client: SnapTrade, user) -> str:
-    """Read-only connection portal link. SnapTrade expires it after 5 minutes."""
+def _fernet() -> Fernet:
+    digest = hashlib.sha256(b"portfolio-analyst-user-token:" + os.environ["SNAPTRADE_CONSUMER_KEY"].encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def seal_user(user) -> str:
+    """Encrypt the SnapTrade user into a URL-safe token only this server can read."""
+    return _fernet().encrypt(json.dumps(user).encode()).decode()
+
+
+def unseal_user(token: str):
+    """The user from seal_user, or None if the token is invalid or older than STALE_USER_SECONDS."""
+    try:
+        user = json.loads(_fernet().decrypt(token.encode(), ttl=STALE_USER_SECONDS))
+    except (InvalidToken, ValueError):
+        return None
+    if not isinstance(user, dict) or not {"user_id", "user_secret"} <= user.keys():
+        return None
+    return user
+
+
+def connection_portal_url(client: SnapTrade, user, redirect_url=None) -> str:
+    """Read-only connection portal link. SnapTrade expires it after 5 minutes.
+
+    With redirect_url, the portal sends the browser there once the brokerage
+    is connected instead of showing its own "Connection Complete" screen.
+    """
+    options = {"custom_redirect": redirect_url, "immediate_redirect": True} if redirect_url else {}
     body = client.authentication.login_snap_trade_user(
-        connection_type="read", **_user_kwargs(user)
+        connection_type="read", **options, **_user_kwargs(user)
     ).body
     return str(body["redirectURI"])
 
@@ -190,7 +221,11 @@ def fetch_holdings(client: SnapTrade, user):
     auth = _user_kwargs(user)
     connections = client.connections.list_brokerage_authorizations(**auth).body
     if not connections:
-        raise ValueError("No brokerage is connected yet. Open the connection portal and sign in first.")
+        raise ValueError(
+            "No brokerage is connected to this session yet. Open the connection "
+            "portal and sign in; if you already did, finish in the tab the "
+            "portal returned you to, or connect again."
+        )
 
     warnings = []
     positions = []

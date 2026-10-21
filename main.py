@@ -1,5 +1,6 @@
 import math
 import os
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import pandas as pd
 import streamlit as st
@@ -18,6 +19,9 @@ load_dotenv()
 
 # Vercel AI Gateway exposes an OpenAI-compatible API.
 AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1"
+
+# Query parameter holding the encrypted SnapTrade user (brokerage_sync.seal_user).
+BROKERAGE_PARAM = "brokerage"
 
 
 INSTRUCTIONS = """You are an expert Stock Portfolio Analyst.
@@ -135,6 +139,31 @@ def disconnect_brokerage(client) -> None:
     brokerage_sync.delete_user(client, st.session_state.snaptrade_user)
     del st.session_state.snaptrade_user
     st.session_state.pop("snaptrade_portal_url", None)
+    st.query_params.pop(BROKERAGE_PARAM, None)
+
+
+def restore_brokerage_user() -> None:
+    """Pick the SnapTrade user up from the URL after a session reset or the portal's redirect."""
+    token = st.query_params.get(BROKERAGE_PARAM)
+    if not token or "snaptrade_user" in st.session_state:
+        return
+    user = brokerage_sync.unseal_user(token)
+    if user is None:
+        del st.query_params[BROKERAGE_PARAM]
+        st.session_state.brokerage_message = ("warning", "Your brokerage connection expired. Connect again.")
+        return
+    st.session_state.snaptrade_user = user
+    st.session_state.brokerage_message = (
+        "info", "Brokerage connection found. Click Load holdings to pull your positions."
+    )
+
+
+def app_url(token=None):
+    """This page's URL carrying the brokerage token, for SnapTrade to redirect back to."""
+    if not st.context.url:
+        return None
+    query = urlencode({BROKERAGE_PARAM: token}) if token else ""
+    return urlunsplit(urlsplit(st.context.url)._replace(query=query, fragment=""))
 
 
 def brokerage_panel() -> None:
@@ -148,8 +177,8 @@ def brokerage_panel() -> None:
     )
     if not personal:
         st.caption(
-            "The connection is kept for this browser session only, so you "
-            "reconnect on each visit."
+            "The connection lasts up to an hour and isn't saved between "
+            "visits, so you reconnect each time."
         )
 
     if st.button("Open connection portal"):
@@ -157,16 +186,22 @@ def brokerage_panel() -> None:
             client = brokerage_sync.make_client()
             if not personal and "snaptrade_user" not in st.session_state:
                 st.session_state.snaptrade_user = brokerage_sync.register_user(client)
+                # Survives a session reset, and comes back with the portal's redirect.
+                st.query_params[BROKERAGE_PARAM] = brokerage_sync.seal_user(st.session_state.snaptrade_user)
             st.session_state.snaptrade_portal_url = brokerage_sync.connection_portal_url(
-                client, st.session_state.get("snaptrade_user")
+                client,
+                st.session_state.get("snaptrade_user"),
+                redirect_url=app_url(st.query_params.get(BROKERAGE_PARAM)),
             )
+            st.session_state.pop("brokerage_message", None)
         except Exception as exc:
             st.session_state.brokerage_message = ("error", f"Couldn't reach SnapTrade: {brokerage_sync.error_message(exc)}")
     if "snaptrade_portal_url" in st.session_state:
         st.link_button("Sign in to your brokerage ↗", st.session_state.snaptrade_portal_url)
         st.caption(
-            "The link expires after 5 minutes. Once your brokerage is "
-            "connected, come back here and load your holdings."
+            "Opens in a new tab and the link expires after 5 minutes. Once "
+            "your brokerage is connected, SnapTrade brings that tab back to "
+            "this app; click Load holdings there (you can close this tab)."
         )
 
     connected = personal or "snaptrade_user" in st.session_state
@@ -287,7 +322,8 @@ def main() -> None:
             getattr(st, kind)(message)
 
     if brokerage_sync.is_configured():
-        with st.expander("🔗 Connect brokerage", expanded=False):
+        restore_brokerage_user()
+        with st.expander("🔗 Connect brokerage", expanded=BROKERAGE_PARAM in st.query_params):
             brokerage_panel()
 
     edited = st.data_editor(

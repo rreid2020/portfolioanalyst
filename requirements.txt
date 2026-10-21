@@ -6,3 +6,4 @@ yfinance
 ddgs
 openpyxl
 snaptrade-python-sdk>=13
+cryptography

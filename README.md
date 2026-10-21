@@ -106,7 +106,7 @@ The **Connect brokerage** panel loads your current positions straight from your 
    ```
 
 3. Restart the app, open **🔗 Connect brokerage**, click **Open connection portal**, then **Sign in to your brokerage ↗**. The link expires after 5 minutes.
-4. After connecting, return to the app tab and click **Load holdings**. This replaces the holdings table, merging the same ticker across accounts (TFSA, RRSP, ...) with a share-weighted average cost.
+4. When the brokerage is connected, SnapTrade sends that tab back to the app. Click **Load holdings** there. This replaces the holdings table, merging the same ticker across accounts (TFSA, RRSP, ...) with a share-weighted average cost.
 
 Stocks, ETFs, ADRs and closed-end funds are loaded. Canadian listings get yfinance suffixes (`SHOP` on TSX → `SHOP.TO`, `RCI.B` → `RCI-B.TO`), the same way CSV import does. Options, crypto, bonds and mutual funds are skipped with a note, because yfinance can't price them by ticker. Paper accounts are ignored.
 
@@ -119,10 +119,11 @@ Stocks, ETFs, ADRs and closed-end funds are loaded. Canadian listings get yfinan
 
 The app has no login, so with a commercial key:
 
-- The first **Open connection portal** click registers a SnapTrade user named `portfolio-analyst-<unix time>-<random>`. Its id and secret live only in that browser session's `st.session_state`, never on disk, in a cookie, or in the URL.
-- A visitor reconnects on each visit. On Vercel, sessions also reset when the WebSocket hits the function's max duration (5 min on Hobby), so connect and load within that window.
-- **Disconnect after loading** (on by default) deletes the SnapTrade user and its brokerage connection right after the holdings load. **Disconnect** does the same without loading.
-- Users left behind by closed tabs are deleted the next time anyone connects, once they are more than an hour old (`STALE_USER_SECONDS` in `brokerage_sync.py`). Only ids with this app's prefix are touched.
+- The first **Open connection portal** click registers a SnapTrade user named `portfolio-analyst-<unix time>-<random>`. Its id and secret are kept in the Streamlit session and, encrypted, in the page URL as `?brokerage=<token>`. The token is encrypted with a key derived from `SNAPTRADE_CONSUMER_KEY` and expires after an hour. Nothing is stored on disk or in a cookie.
+- The portal opens in a new tab. When the brokerage is connected, SnapTrade redirects that tab back to the app with the token. The panel opens already connected, so you click **Load holdings** there and can close the original tab.
+- The URL copy also covers Vercel recycling the session: the WebSocket closes at the function's max duration (5 min on Hobby), and a slow sign-in with 2FA can outlast it. The reconnected session reads the token and picks up the same SnapTrade user.
+- While the token is in the URL, anyone with that exact URL can load those holdings for up to an hour, so don't share the URL mid-connection. Loading with **Disconnect after loading** (on by default) or clicking **Disconnect** deletes the SnapTrade user and its brokerage connection, and removes the token from the URL.
+- Visitors reconnect on each visit. Users left behind by closed tabs are deleted the next time anyone connects, once they are more than an hour old (`STALE_USER_SECONDS` in `brokerage_sync.py`). Only ids with this app's prefix are touched.
 
 ### Pricing (checked October 2026)
 

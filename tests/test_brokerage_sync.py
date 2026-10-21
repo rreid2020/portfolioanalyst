@@ -166,6 +166,16 @@ class FetchHoldingsTest(unittest.TestCase):
         self.assertEqual(login["body"]["connectionType"], "read")
         self.assertEqual(login["query"]["userId"], USER["user_id"])
 
+    def test_portal_redirects_back_to_the_app(self):
+        routes = {("POST", "/snapTrade/login"): {"redirectURI": "https://app.snaptrade.com/connect", "sessionId": "s"}}
+        with FakeSnapTradeAPI(routes) as api:
+            brokerage_sync.connection_portal_url(
+                brokerage_sync.make_client(), USER, redirect_url="https://stocks.example.com/?brokerage=tok"
+            )
+        (login,) = api.find("POST", "/snapTrade/login")
+        self.assertEqual(login["body"]["customRedirect"], "https://stocks.example.com/?brokerage=tok")
+        self.assertTrue(login["body"]["immediateRedirect"])
+
     @mock.patch.dict(os.environ, {"SNAPTRADE_KEY_TYPE": "personal"})
     def test_personal_key_sends_no_user(self):
         routes = {("POST", "/snapTrade/login"): {"redirectURI": "https://app.snaptrade.com/connect", "sessionId": "s"}}
@@ -229,6 +239,24 @@ class PositionsToHoldingsTest(unittest.TestCase):
         ])
         self.assertIn("Skipped positions yfinance can't price (1 option).", warnings)
         self.assertIn("Skipped 1 position(s) without a positive quantity.", warnings)
+
+
+@mock.patch.dict(os.environ, environ(ENV), clear=True)
+class UserTokenTest(unittest.TestCase):
+    def test_round_trip(self):
+        token = brokerage_sync.seal_user(USER)
+        self.assertNotIn(USER["user_secret"], token)
+        self.assertEqual(brokerage_sync.unseal_user(token), USER)
+
+    def test_rejects_expired_tampered_and_foreign_tokens(self):
+        token = brokerage_sync.seal_user(USER)
+        later = time.time() + brokerage_sync.STALE_USER_SECONDS + 5
+        with mock.patch("cryptography.fernet.time.time", return_value=later):
+            self.assertIsNone(brokerage_sync.unseal_user(token))
+        self.assertIsNone(brokerage_sync.unseal_user(token[:-4] + "AAAA"))
+        self.assertIsNone(brokerage_sync.unseal_user("not-a-token"))
+        with mock.patch.dict(os.environ, {"SNAPTRADE_CONSUMER_KEY": "another-key"}):
+            self.assertIsNone(brokerage_sync.unseal_user(token))
 
 
 class ConfigTest(unittest.TestCase):
@@ -302,7 +330,41 @@ class StreamlitUITest(unittest.TestCase):
         # "Disconnect after loading" is on by default.
         client.authentication.delete_snap_trade_user.assert_called_once_with(user_id="portfolio-analyst-1-ui")
         self.assertNotIn("snaptrade_user", app.session_state)
-        self.assertIn("Loaded 1 holding(s)", app.success[0].value)
+        self.assertTrue(any("Loaded 1 holding(s)" in m.value for m in app.success))
+        self.assertNotIn("brokerage", app.query_params)
+
+    def test_session_reset_restores_user_from_url(self):
+        client = fake_client()
+        with mock.patch.object(brokerage_sync, "make_client", return_value=client),                 mock.patch.dict(os.environ, environ(ENV), clear=True):
+            from streamlit.testing.v1 import AppTest
+
+            first = AppTest.from_file(str(ROOT / "main.py"), default_timeout=60).run()
+            next(b for b in first.button if b.label == "Open connection portal").click().run()
+            token = first.query_params["brokerage"]
+            token = token[0] if isinstance(token, list) else token
+
+            # A fresh session (Vercel recycled the WebSocket, or the portal
+            # redirected a new tab back) with the same URL.
+            second = AppTest.from_file(str(ROOT / "main.py"), default_timeout=60)
+            second.query_params["brokerage"] = token
+            second.run()
+            self.assertEqual(second.session_state.snaptrade_user["user_id"], "portfolio-analyst-1-ui")
+            self.assertTrue(any("Brokerage connection found" in i.value for i in second.info))
+            next(b for b in second.button if b.label == "Load holdings").click().run()
+
+        self.assertEqual(list(second.session_state.holdings["Ticker"]), ["XEQT.TO"])
+        client.authentication.register_snap_trade_user.assert_called_once()
+
+    def test_bad_token_in_url_is_dropped(self):
+        with mock.patch.dict(os.environ, environ(ENV), clear=True):
+            from streamlit.testing.v1 import AppTest
+
+            app = AppTest.from_file(str(ROOT / "main.py"), default_timeout=60)
+            app.query_params["brokerage"] = "garbage"
+            app.run()
+        self.assertNotIn("snaptrade_user", app.session_state)
+        self.assertNotIn("brokerage", app.query_params)
+        self.assertTrue(any("expired" in w.value for w in app.warning))
 
 
 if __name__ == "__main__":
