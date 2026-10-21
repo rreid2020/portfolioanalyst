@@ -7,9 +7,10 @@ Adapted from [`simple_ai_agents/stock_portfolio_analyst`](https://github.com/Ari
 ## 🚀 Features
 
 - **Portfolio editor**: spreadsheet-style UI to enter/edit holdings
-- **CSV / Excel import**: upload a broker holdings export (e.g. Wealthsimple's Holdings report) or your own sheet; columns are auto-detected, positions across accounts are merged, and Canadian listings get yfinance suffixes (`SHOP` on TSX → `SHOP.TO`)
+- **CSV / Excel import**: upload a broker holdings export (e.g. Wealthsimple's Holdings report) or your own sheet; columns are auto-detected, each account's type is read from an account type or name column, lots in the same account are merged, and Canadian listings get yfinance suffixes (`SHOP` on TSX → `SHOP.TO`)
 - **Connect brokerage (optional)**: pull live holdings from Wealthsimple, Questrade, IBKR and other brokers through [SnapTrade](https://snaptrade.com/), read-only. You sign in on SnapTrade's page, so the app never sees your brokerage password
 - **Live dashboard**: as soon as holdings are entered, figures are computed in code from live Yahoo Finance quotes: market value, cost basis, unrealized P/L and today's change, in CAD or USD at live FX rates (London pence handled). Allocation by holding, sector, country and currency, a gain/loss chart, and a positions table
+- **Canadian accounts**: an Account column (TFSA, RRSP, FHSA, RRIF, RESP, RDSP, LIRA, Non-registered), filled in from CSV imports and brokerage connections; per-account value, P/L and dividend totals, and placement hints such as US dividends losing 15% withholding in a TFSA or FHSA (general rules, not tax advice)
 - **Performance & risk**: a backtest of today's holdings over 1 month to 5 years against a benchmark (XIC, XEQT, S&P 500 or Nasdaq 100), in CAD or USD at daily FX with dividends reinvested; return, annualized volatility, beta, max drawdown, and a correlation heatmap of your holdings
 - **Dividend income**: trailing 12-month dividends per holding, portfolio yield and expected annual income in your report currency
 - **Verified numbers for the analyst**: the computed figures go into the analyst's prompt, so the report quotes them instead of doing its own arithmetic
@@ -113,7 +114,7 @@ The **Connect brokerage** panel loads your current positions straight from your 
    ```
 
 3. Restart the app, open **🔗 Connect brokerage**, click **Open connection portal**, then **Sign in to your brokerage ↗**. The link expires after 5 minutes.
-4. When the brokerage is connected, SnapTrade sends that tab back to the app. Click **Load holdings** there. This replaces the holdings table, merging the same ticker across accounts (TFSA, RRSP, ...) with a share-weighted average cost.
+4. When the brokerage is connected, SnapTrade sends that tab back to the app. Click **Load holdings** there. This replaces the holdings table with one row per ticker per account, labelled with the account type (TFSA, RRSP, ...) from SnapTrade.
 
 Stocks, ETFs, ADRs and closed-end funds are loaded. Canadian listings get yfinance suffixes (`SHOP` on TSX → `SHOP.TO`, `RCI.B` → `RCI-B.TO`), the same way CSV import does. Options, crypto, bonds and mutual funds are skipped with a note, because yfinance can't price them by ticker. Paper accounts are ignored.
 
@@ -144,7 +145,7 @@ Positions are read with `get_all_account_positions`. SnapTrade's older `get_user
 
 ## 💡 How to Use
 
-1. In the **Your Holdings** table, add one row per position: `Ticker`, `Shares`, `Avg Buy Price`, `Currency`. Or fill it from **Import from CSV or Excel** or **Connect brokerage**.
+1. In the **Your Holdings** table, add one row per position: `Ticker`, `Shares`, `Avg Buy Price`, `Currency`, and optionally `Account` (TFSA, RRSP, FHSA...). Or fill it from **Import from CSV or Excel** or **Connect brokerage**.
 2. Optionally tweak the focus question (e.g. _"Assess my tech concentration risk"_ or _"Which position looks most overvalued?"_).
 3. Check the **Dashboard** below the table: totals, allocation, gains and losses, performance and risk against a benchmark, dividend income, and every position. The performance figures value today's holdings over the chosen period, so they show how this mix would have done rather than your actual returns. Pick CAD or USD under **Report currency** in the sidebar. A blank `Currency` means the average buy price is in the currency the ticker trades in.
 4. Click **Analyze portfolio**.

@@ -32,7 +32,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from snaptrade_client import SnapTrade, SnapTradeAuth
 from snaptrade_client.exceptions import ApiException
 
-from portfolio_import import COLUMNS, _yfinance_symbol
+from portfolio_import import COLUMNS, _yfinance_symbol, normalize_account
 
 USER_ID_PREFIX = "portfolio-analyst-"
 STALE_USER_SECONDS = 60 * 60
@@ -167,8 +167,20 @@ def connection_portal_url(client: SnapTrade, user, redirect_url=None) -> str:
     return str(body["redirectURI"])
 
 
+def account_type(account) -> str:
+    """TFSA, RRSP, Non-registered... from SnapTrade's raw account type, else its name."""
+    account_type = normalize_account(_text(account.get("raw_type")))
+    if account_type in ("", "Other"):
+        account_type = normalize_account(_text(account.get("display_name"))) or account_type
+    return account_type
+
+
 def positions_to_holdings(positions):
-    """Merge SnapTrade positions into a DataFrame with COLUMNS plus warning strings."""
+    """Merge SnapTrade positions into a DataFrame with COLUMNS plus warning strings.
+
+    A position may carry an "account" type (see account_type); lots in the same
+    account are combined, while different accounts stay separate rows.
+    """
     holdings = {}
     skipped_kinds = {}
     skipped_short = 0
@@ -188,9 +200,9 @@ def positions_to_holdings(positions):
         ticker = _yfinance_symbol(symbol, _text(instrument.get("exchange")))
         currency = (_text(position.get("currency")) or _text(instrument.get("currency"))).upper()
         avg = _number(position.get("cost_basis"))
+        account = position.get("account", "")
 
-        # The same security can be held in several accounts (TFSA, RRSP...).
-        pos = holdings.setdefault((ticker, currency), {"shares": 0.0, "cost": 0.0, "has_cost": True})
+        pos = holdings.setdefault((ticker, currency, account), {"shares": 0.0, "cost": 0.0, "has_cost": True})
         pos["shares"] += shares
         if avg is None:
             pos["has_cost"] = False
@@ -210,8 +222,9 @@ def positions_to_holdings(positions):
             "Shares": round(pos["shares"], 6),
             "Avg Buy Price": round(pos["cost"] / pos["shares"], 4) if pos["has_cost"] else None,
             "Currency": currency,
+            "Account": account,
         }
-        for (ticker, currency), pos in holdings.items()
+        for (ticker, currency, account), pos in holdings.items()
     ]
     return pd.DataFrame(rows, columns=COLUMNS), warnings
 
@@ -241,8 +254,10 @@ def fetch_holdings(client: SnapTrade, user):
             if _text(account.get("kind")) != "investment" or account.get("is_paper"):
                 continue
             account_count += 1
+            label = account_type(account)
             positions.extend(
-                client.account_information.get_all_account_positions(
+                {**position, "account": label}
+                for position in client.account_information.get_all_account_positions(
                     account_id=str(account["id"]), **auth
                 ).body["results"]
             )

@@ -8,10 +8,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import pandas as pd
 from agno.run.response import RunResponseContentEvent
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # sibling test helpers
 
 import portfolio_analytics  # noqa: E402
 import portfolio_metrics  # noqa: E402
@@ -77,7 +79,7 @@ class ComputeTest(unittest.TestCase):
         self.assertEqual(figures.unpriced, ["AAPL"])
         self.assertTrue(figures.positions.empty)
 
-    def test_duplicate_tickers_merge(self):
+    def test_duplicate_tickers_merge_within_an_account(self):
         figures = portfolio_metrics.compute(
             [holding("AAPL", 10, 100, "USD"), holding("AAPL", 10, 200, "USD")], QUOTES, FX, "USD"
         )
@@ -85,6 +87,25 @@ class ComputeTest(unittest.TestCase):
         self.assertEqual(row["Shares"], 20)
         self.assertAlmostEqual(row["Cost"], (1000 + 2000) * 1.4)
         self.assertAlmostEqual(row["P/L %"], (4000 - 3000) / 3000 * 100)
+
+    def test_accounts_stay_apart_and_combine_by_ticker(self):
+        holdings = [
+            {**holding("AAPL", 10, 100, "USD"), "account": "TFSA"},
+            {**holding("AAPL", 5, 200, "USD"), "account": "RRSP"},
+            {**holding("XEQT.TO", 25), "account": "TFSA"},
+        ]
+        figures = portfolio_metrics.compute(holdings, QUOTES, FX, "CAD")
+        self.assertEqual(len(figures.positions), 3)
+        accounts = figures.allocation("Account").set_index("Group")
+        self.assertAlmostEqual(accounts.loc["TFSA", "Value"], 2800 + 1000)
+        self.assertAlmostEqual(accounts.loc["RRSP", "Value"], 1400)
+        aapl = figures.by_ticker().set_index("Ticker").loc["AAPL"]
+        self.assertEqual(aapl["Shares"], 15)
+        self.assertEqual(aapl["Account"], "TFSA, RRSP")
+        self.assertAlmostEqual(aapl["Cost"], (1000 + 1000) * 1.4)
+        self.assertAlmostEqual(aapl["Weight %"], 4200 / 5200 * 100)
+        # XEQT has no cost, so its P/L stays unknown when combined.
+        self.assertTrue(pd.isna(figures.by_ticker().set_index("Ticker").loc["XEQT.TO", "P/L"]))
 
     def test_allocation(self):
         by_sector = self.figures.allocation("Sector")
@@ -98,7 +119,7 @@ class ComputeTest(unittest.TestCase):
         self.assertIn("Total market value: 4,516.00 CAD", text)
         self.assertIn("1 USD = 1.4000 CAD", text)
         self.assertIn("No live price found for: BOGUS", text)
-        self.assertIn("| AAPL | Apple Inc. | 10 | 200.00 | USD | 2,800.00 | 2,100.00 | 700.00 | +33.33% |", text)
+        self.assertIn("| AAPL | Unspecified | Apple Inc. | 10 | 200.00 | USD | 2,800.00 | 2,100.00 | 700.00 | +33.33% |", text)
         self.assertIn("Allocation by sector: Technology", text)
 
     def test_needed_currencies(self):

@@ -10,7 +10,23 @@ import re
 
 import pandas as pd
 
-COLUMNS = ["Ticker", "Shares", "Avg Buy Price", "Currency"]
+COLUMNS = ["Ticker", "Shares", "Avg Buy Price", "Currency", "Account"]
+
+# Canadian account types, in the order the holdings editor offers them.
+ACCOUNT_TYPES = ["TFSA", "RRSP", "FHSA", "RRIF", "RESP", "RDSP", "LIRA", "Non-registered", "Other"]
+# Normalized fragment -> account type, checked in order (rrsp before rsp, and so on).
+ACCOUNT_KEYWORDS = [
+    ("tfsa", "TFSA"), ("taxfree", "TFSA"), ("celi", "TFSA"),
+    ("fhsa", "FHSA"), ("firsthome", "FHSA"), ("celiapp", "FHSA"),
+    ("rrif", "RRIF"), ("retirementincome", "RRIF"), ("ferr", "RRIF"),
+    ("resp", "RESP"), ("education", "RESP"),
+    ("rdsp", "RDSP"), ("disability", "RDSP"),
+    ("lira", "LIRA"), ("lockedin", "LIRA"), ("lif", "LIRA"), ("lrsp", "LIRA"),
+    ("rrsp", "RRSP"), ("rsp", "RRSP"), ("retirementsavings", "RRSP"), ("reer", "RRSP"),
+    ("nonregistered", "Non-registered"), ("nonreg", "Non-registered"), ("personal", "Non-registered"),
+    ("individual", "Non-registered"), ("joint", "Non-registered"), ("cash", "Non-registered"),
+    ("margin", "Non-registered"), ("taxable", "Non-registered"), ("corporate", "Non-registered"),
+]
 
 # Normalized header (lowercase, letters/digits only) -> field.
 TICKER_ALIASES = {"symbol", "ticker", "tickersymbol", "stocksymbol", "securitysymbol", "code"}
@@ -23,6 +39,9 @@ AVG_PRICE_ALIASES = {
 # Total cost of the position; divided by shares when no per-share column exists.
 BOOK_VALUE_PREFIXES = ("bookvalue", "bookcost", "costbasis", "totalcost", "acb")
 EXCHANGE_ALIASES = {"exchange", "listingexchange", "market", "mic"}
+# Account type columns first; an account name ("TFSA", "My RRSP") is the fallback.
+ACCOUNT_ALIASES = {"accounttype", "registrationtype", "plantype", "accountclassification", "registration"}
+ACCOUNT_NAME_ALIASES = {"accountname", "account", "accountnickname", "accountdescription"}
 
 # yfinance suffixes for Canadian listings.
 CANADIAN_SUFFIXES = {
@@ -55,6 +74,22 @@ def _to_number(value):
     except ValueError:
         return None
     return -number if negative else number
+
+
+def normalize_account(value) -> str:
+    """Map a broker's account label to one of ACCOUNT_TYPES, or "" when blank."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    if text in ACCOUNT_TYPES:
+        return text
+    norm = _norm(text)
+    for keyword, account in ACCOUNT_KEYWORDS:
+        if keyword in norm:
+            return account
+    return "Other"
 
 
 def _find_header_row(raw: pd.DataFrame):
@@ -156,6 +191,8 @@ def read_holdings(filename: str, data: bytes):
     avg_col = _pick_column(headers, AVG_PRICE_ALIASES)
     book_col = None if avg_col else _pick_column(headers, prefixes=BOOK_VALUE_PREFIXES)
     exchange_col = _pick_column(headers, EXCHANGE_ALIASES)
+    account_col = _pick_column(headers, ACCOUNT_ALIASES)
+    account_name_col = _pick_column(headers, ACCOUNT_NAME_ALIASES)
     currency_col = _pick_currency_column(headers, used_book_value=book_col is not None)
 
     warnings = []
@@ -185,8 +222,12 @@ def read_holdings(filename: str, data: bytes):
         else:
             cost = None
 
-        # The same security can appear in several accounts (TFSA, RRSP...).
-        key = (ticker, currency)
+        account = normalize_account(row.get(account_col)) if account_col else ""
+        if account in ("", "Other") and account_name_col:
+            account = normalize_account(row.get(account_name_col)) or account
+
+        # Lots of one security in the same account are combined; accounts stay apart.
+        key = (ticker, currency, account)
         pos = positions.setdefault(key, {"shares": 0.0, "cost": 0.0, "has_cost": True})
         pos["shares"] += shares
         if cost is None:
@@ -205,15 +246,16 @@ def read_holdings(filename: str, data: bytes):
             "Shares": round(pos["shares"], 6),
             "Avg Buy Price": round(pos["cost"] / pos["shares"], 4) if pos["has_cost"] else None,
             "Currency": currency,
+            "Account": account,
         }
-        for (ticker, currency), pos in positions.items()
+        for (ticker, currency, account), pos in positions.items()
     ]
     return pd.DataFrame(rows, columns=COLUMNS), warnings
 
 
 def template_csv() -> bytes:
     return (
-        "Ticker,Shares,Avg Buy Price,Currency\n"
-        "AAPL,10,150,USD\n"
-        "SHOP.TO,20,95.50,CAD\n"
+        "Ticker,Shares,Avg Buy Price,Currency,Account\n"
+        "AAPL,10,150,USD,RRSP\n"
+        "SHOP.TO,20,95.50,CAD,TFSA\n"
     ).encode()

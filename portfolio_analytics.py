@@ -100,7 +100,7 @@ class Performance:
 def compute_performance(figures, history: pd.DataFrame, benchmark: str, period: str):
     """Backtest of figures.positions over `period`, or None without enough history."""
     close = _field(history, "Close")
-    positions = figures.positions
+    positions = figures.by_ticker() if not figures.positions.empty else figures.positions
     if close.empty or positions.empty:
         return None
     base = figures.base
@@ -191,9 +191,19 @@ def compute_performance(figures, history: pd.DataFrame, benchmark: str, period: 
 @dataclass
 class Dividends:
     base: str
-    rows: pd.DataFrame  # Ticker, Dividend/share, Currency, Yield %, Annual income
+    rows: pd.DataFrame  # Ticker, Account, Dividend/share, Currency, Yield %, Annual income; one row per position
     total_income: float
     portfolio_yield: float | None  # % of total market value
+
+    def by_ticker(self) -> pd.DataFrame:
+        """Income per ticker across accounts, largest first."""
+        if self.rows.empty:
+            return self.rows
+        return (
+            self.rows.groupby("Ticker", as_index=False, sort=False)
+            .agg({"Dividend/share": "first", "Currency": "first", "Yield %": "first", "Annual income": "sum"})
+            .sort_values("Annual income", ascending=False, ignore_index=True)
+        )
 
 
 def compute_dividends(figures, history: pd.DataFrame, as_of=None) -> Dividends:
@@ -210,12 +220,13 @@ def compute_dividends(figures, history: pd.DataFrame, as_of=None) -> Dividends:
         per_share = paid / figures.unit_divisors.get(p.Ticker, 1)
         rows.append({
             "Ticker": p.Ticker,
+            "Account": p.Account,
             "Dividend/share": per_share,
             "Currency": p.Currency,
             "Yield %": per_share / p.Price * 100 if p.Price else None,
             "Annual income": per_share * p.Shares * fx.get(p.Currency, np.nan),
         })
-    table = pd.DataFrame(rows, columns=["Ticker", "Dividend/share", "Currency", "Yield %", "Annual income"])
+    table = pd.DataFrame(rows, columns=["Ticker", "Account", "Dividend/share", "Currency", "Yield %", "Annual income"])
     table = table.sort_values("Annual income", ascending=False, ignore_index=True)
     total = float(table["Annual income"].sum())
     return Dividends(
@@ -262,7 +273,8 @@ def to_markdown(performance, dividends) -> str:
             lines.append(f"- No price history for: {', '.join(p.excluded)}")
     if dividends is not None:
         d = dividends
-        payers = d.rows[d.rows["Annual income"] > 0]
+        payers = d.by_ticker()
+        payers = payers[payers["Annual income"] > 0]
         lines += [
             "",
             f"Dividends (trailing 12 months, in {d.base}): expected annual income "

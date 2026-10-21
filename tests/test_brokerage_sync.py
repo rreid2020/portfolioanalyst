@@ -40,8 +40,8 @@ def stock(symbol, exchange, units, cost, currency, kind="stock"):
     }
 
 
-def investment_account(account_id, connection_id, is_paper=False):
-    return {
+def investment_account(account_id, connection_id, is_paper=False, raw_type=None, display_name=None):
+    account = {
         "kind": "investment",
         "id": account_id,
         "connection_id": connection_id,
@@ -49,6 +49,11 @@ def investment_account(account_id, connection_id, is_paper=False):
         "sync_status": {},
         "is_paper": is_paper,
     }
+    if raw_type is not None:
+        account["raw_type"] = raw_type
+    if display_name is not None:
+        account["display_name"] = display_name
+    return account
 
 
 class HTTPError:
@@ -111,10 +116,12 @@ HOLDINGS_ROUTES = {
         {"id": CONN_QT, "brokerage": {"display_name": "Questrade", "slug": "QUESTRADE"}, "disabled": True},
     ],
     ("GET", f"/connections/{CONN_WS}/accounts"): {"results": [
-        investment_account(ACCT_TFSA, CONN_WS),
+        investment_account(ACCT_TFSA, CONN_WS, raw_type="ca_tfsa"),
         investment_account(ACCT_PAPER, CONN_WS, is_paper=True),
     ]},
-    ("GET", f"/connections/{CONN_QT}/accounts"): {"results": [investment_account(ACCT_RRSP, CONN_QT)]},
+    ("GET", f"/connections/{CONN_QT}/accounts"): {"results": [
+        investment_account(ACCT_RRSP, CONN_QT, display_name="My Spousal RRSP"),
+    ]},
     ("GET", f"/accounts/{ACCT_TFSA}/positions/all"): {
         "results": [
             stock("SHOP", "XTSE", 10, 100, "CAD"),
@@ -132,17 +139,19 @@ HOLDINGS_ROUTES = {
 
 @mock.patch.dict(os.environ, environ(ENV), clear=True)
 class FetchHoldingsTest(unittest.TestCase):
-    def test_merges_positions_across_accounts_through_the_sdk(self):
+    def test_keeps_accounts_apart_through_the_sdk(self):
         with FakeSnapTradeAPI(HOLDINGS_ROUTES) as api:
             holdings, warnings = brokerage_sync.fetch_holdings(brokerage_sync.make_client(), USER)
 
-        rows = {r["Ticker"]: r for r in holdings.to_dict("records")}
-        self.assertEqual(list(holdings.columns), ["Ticker", "Shares", "Avg Buy Price", "Currency"])
-        self.assertEqual(set(rows), {"SHOP.TO", "AAPL", "RCI-B.TO"})
-        self.assertEqual(rows["SHOP.TO"]["Shares"], 40)
-        self.assertAlmostEqual(rows["SHOP.TO"]["Avg Buy Price"], (10 * 100 + 30 * 120) / 40)
-        self.assertEqual(rows["SHOP.TO"]["Currency"], "CAD")
-        self.assertEqual(rows["AAPL"]["Currency"], "USD")
+        rows = {(r["Ticker"], r["Account"]): r for r in holdings.to_dict("records")}
+        self.assertEqual(list(holdings.columns), ["Ticker", "Shares", "Avg Buy Price", "Currency", "Account"])
+        # raw_type "ca_tfsa" -> TFSA; without a raw_type the name "My Spousal RRSP" -> RRSP.
+        self.assertEqual(set(rows), {("SHOP.TO", "TFSA"), ("AAPL", "TFSA"), ("SHOP.TO", "RRSP"), ("RCI-B.TO", "RRSP")})
+        self.assertEqual(rows[("SHOP.TO", "TFSA")]["Shares"], 10)
+        self.assertEqual(rows[("SHOP.TO", "RRSP")]["Shares"], 30)
+        self.assertAlmostEqual(rows[("SHOP.TO", "RRSP")]["Avg Buy Price"], 120)
+        self.assertEqual(rows[("SHOP.TO", "TFSA")]["Currency"], "CAD")
+        self.assertEqual(rows[("AAPL", "TFSA")]["Currency"], "USD")
         # The paper account is never read.
         self.assertFalse(api.find("GET", f"/accounts/{ACCT_PAPER}/positions/all"))
         self.assertTrue(any("Questrade connection is disabled" in w for w in warnings))
@@ -218,6 +227,23 @@ class FetchHoldingsTest(unittest.TestCase):
 
 
 class PositionsToHoldingsTest(unittest.TestCase):
+    def test_lots_in_one_account_merge(self):
+        holdings, _ = brokerage_sync.positions_to_holdings([
+            {**stock("XEQT", "XTSE", 10, 30, "CAD"), "account": "TFSA"},
+            {**stock("XEQT", "XTSE", 10, 40, "CAD"), "account": "TFSA"},
+            {**stock("XEQT", "XTSE", 5, 50, "CAD"), "account": "RRSP"},
+        ])
+        self.assertEqual(holdings.to_dict("records"), [
+            {"Ticker": "XEQT.TO", "Shares": 20.0, "Avg Buy Price": 35.0, "Currency": "CAD", "Account": "TFSA"},
+            {"Ticker": "XEQT.TO", "Shares": 5.0, "Avg Buy Price": 50.0, "Currency": "CAD", "Account": "RRSP"},
+        ])
+
+    def test_account_type_falls_back_to_the_name(self):
+        self.assertEqual(brokerage_sync.account_type({"raw_type": "RRSP"}), "RRSP")
+        self.assertEqual(brokerage_sync.account_type({"raw_type": "weird", "display_name": "Kids RESP"}), "RESP")
+        self.assertEqual(brokerage_sync.account_type({"raw_type": "weird"}), "Other")
+        self.assertEqual(brokerage_sync.account_type({}), "")
+
     def test_symbol_mapping(self):
         holdings, _ = brokerage_sync.positions_to_holdings([
             stock("VFV", "TSX", 1, 100, "CAD"),
@@ -235,7 +261,7 @@ class PositionsToHoldingsTest(unittest.TestCase):
             stock("SPY 260116C00500000", None, 1, 5, "USD", kind="option"),
         ])
         self.assertEqual(holdings.to_dict("records"), [
-            {"Ticker": "AAPL", "Shares": 2.0, "Avg Buy Price": None, "Currency": "USD"},
+            {"Ticker": "AAPL", "Shares": 2.0, "Avg Buy Price": None, "Currency": "USD", "Account": ""},
         ])
         self.assertIn("Skipped positions yfinance can't price (1 option).", warnings)
         self.assertIn("Skipped 1 position(s) without a positive quantity.", warnings)
@@ -281,7 +307,7 @@ def fake_client():
         body=[{"id": CONN_WS, "brokerage": {"display_name": "Wealthsimple"}, "disabled": False}]
     )
     client.connections.list_connection_accounts.return_value = SimpleNamespace(
-        body={"results": [investment_account(ACCT_1, CONN_WS)]}
+        body={"results": [investment_account(ACCT_1, CONN_WS, raw_type="TFSA")]}
     )
     client.account_information.get_all_account_positions.return_value = SimpleNamespace(
         body={"results": [stock("XEQT", "XTSE", 12.5, 30, "CAD")]}
@@ -332,7 +358,7 @@ class StreamlitUITest(unittest.TestCase):
 
         self.assertFalse(app.exception)
         self.assertEqual(app.session_state.holdings.to_dict("records"), [
-            {"Ticker": "XEQT.TO", "Shares": 12.5, "Avg Buy Price": 30.0, "Currency": "CAD"},
+            {"Ticker": "XEQT.TO", "Shares": 12.5, "Avg Buy Price": 30.0, "Currency": "CAD", "Account": "TFSA"},
         ])
         self.assertEqual(app.session_state.editor_version, version + 1)
         # "Disconnect after loading" is on by default.

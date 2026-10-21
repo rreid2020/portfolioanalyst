@@ -3,6 +3,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+import account_hints
 import portfolio_analytics
 import portfolio_metrics
 
@@ -17,7 +18,9 @@ NEUTRAL = "#EEF1F4"  # diverging midpoint
 
 MAX_BARS = 12  # longer lists fold their tail into "Other"
 
-ALLOCATION_VIEWS = {"Holding": "Ticker", "Sector": "Sector", "Country": "Country", "Currency": "Currency"}
+ALLOCATION_VIEWS = {
+    "Holding": "Ticker", "Account": "Account", "Sector": "Sector", "Country": "Country", "Currency": "Currency",
+}
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -294,9 +297,43 @@ def performance_tab(figures, history):
     return performance
 
 
-def dividends_tab(figures, history):
-    """Income tiles, income chart and table. Returns the Dividends."""
-    dividends = portfolio_analytics.compute_dividends(figures, history)
+def accounts_tab(figures, dividends, hints):
+    """Value per account, account table, and placement hints."""
+    base = figures.base
+    if set(figures.positions["Account"]) == {portfolio_metrics.UNSPECIFIED_ACCOUNT}:
+        st.info(
+            "Set the Account column (TFSA, RRSP, FHSA, Non-registered...) in the holdings table to see "
+            "per-account totals and placement hints. CSV imports and brokerage connections fill it in."
+        )
+        return
+    chart, height = allocation_chart(figures.allocation("Account"), base)
+    st.altair_chart(chart, width="stretch", height=height)
+    st.dataframe(
+        account_hints.account_summary(figures, dividends),
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "Value": st.column_config.NumberColumn(f"Value ({base})", format="accounting"),
+            "Cost": st.column_config.NumberColumn(f"Cost ({base})", format="accounting"),
+            "P/L": st.column_config.NumberColumn(f"P/L ({base})", format="accounting"),
+            "P/L %": st.column_config.NumberColumn(format="%+.2f%%"),
+            "Weight %": st.column_config.NumberColumn(format="%.1f%%"),
+            "Annual income": st.column_config.NumberColumn(f"Dividends ({base}/yr)", format="accounting"),
+        },
+    )
+    st.markdown("**Account placement hints**")
+    if hints:
+        for hint in hints:
+            with st.container(border=True):
+                st.markdown(f":material/lightbulb: **{hint.title}**")
+                st.caption(hint.detail)
+    else:
+        st.caption("Nothing stands out: no US dividends in a TFSA, FHSA or RESP, and no high-yield Canadian dividend stocks in an RRSP.")
+    st.caption(account_hints.DISCLAIMER)
+
+
+def dividends_tab(figures, dividends):
+    """Income tiles, income chart and table."""
     base = figures.base
     tiles = st.columns(2)
     tiles[0].metric(f"Expected annual income ({base})", f"{dividends.total_income:,.0f}", border=True)
@@ -311,7 +348,7 @@ def dividends_tab(figures, history):
         "Future payments can differ."
     )
     if (dividends.rows["Annual income"] > 0).any():
-        chart, height = income_chart(dividends.rows, base)
+        chart, height = income_chart(dividends.by_ticker(), base)
         st.altair_chart(chart, width="stretch", height=height)
         st.dataframe(
             dividends.rows,
@@ -325,11 +362,10 @@ def dividends_tab(figures, history):
         )
     else:
         st.info("None of these holdings paid a dividend in the past 12 months.")
-    return dividends
 
 
 def render(figures):
-    """Draw the dashboard. Returns (Performance or None, Dividends or None) for the analyst."""
+    """Draw the dashboard. Returns (Performance or None, Dividends or None, hints) for the analyst."""
     base = figures.base
     st.subheader("Dashboard")
     note = "Live Yahoo Finance quotes, which can be delayed up to 15 minutes; refreshed every 5 minutes."
@@ -340,7 +376,7 @@ def render(figures):
     if figures.unpriced:
         st.warning(f"No live price for {', '.join(figures.unpriced)}; left out of the totals. Check the ticker symbols.")
     if figures.positions.empty:
-        return None, None
+        return None, None, []
 
     tiles = st.columns(4)
     tiles[0].metric(f"Market value ({base})", _money(figures.total_value), border=True)
@@ -356,8 +392,11 @@ def render(figures):
         help="Change since the previous close.",
     )
 
-    allocation_tab, pl_tab, performance_tab_, dividends_tab_, positions_tab = st.tabs(
-        ["Allocation", "Gain / loss", "Performance & risk", "Dividends", "Positions"]
+    history = _history(tuple(portfolio_analytics.history_symbols(figures.positions, base)))
+    dividends = portfolio_analytics.compute_dividends(figures, history)
+    hints = account_hints.placement_hints(figures, dividends)
+    allocation_tab, pl_tab, accounts_tab_, performance_tab_, dividends_tab_, positions_tab = st.tabs(
+        ["Allocation", "Gain / loss", "Accounts", "Performance & risk", "Dividends", "Positions"]
     )
     with allocation_tab:
         view = st.segmented_control(
@@ -366,19 +405,21 @@ def render(figures):
         chart, height = allocation_chart(figures.allocation(ALLOCATION_VIEWS[view]), base)
         st.altair_chart(chart, width="stretch", height=height)
     with pl_tab:
-        if figures.positions["P/L"].notna().any():
-            chart, height = pl_chart(figures.positions, base)
+        by_ticker = figures.by_ticker()
+        if by_ticker["P/L"].notna().any():
+            chart, height = pl_chart(by_ticker, base)
             st.altair_chart(chart, width="stretch", height=height)
-            missing = figures.positions.loc[figures.positions["P/L"].isna(), "Ticker"].tolist()
+            missing = by_ticker.loc[by_ticker["P/L"].isna(), "Ticker"].tolist()
             if missing:
                 st.caption(f"No average buy price for {', '.join(missing)}, so no P/L is shown.")
         else:
             st.info("Add average buy prices to see gains and losses.")
-    history = _history(tuple(portfolio_analytics.history_symbols(figures.positions, base)))
+    with accounts_tab_:
+        accounts_tab(figures, dividends, hints)
     with performance_tab_:
         performance = performance_tab(figures, history)
     with dividends_tab_:
-        dividends = dividends_tab(figures, history)
+        dividends_tab(figures, dividends)
     with positions_tab:
         st.dataframe(
             figures.positions,
@@ -395,4 +436,4 @@ def render(figures):
                 "Weight %": st.column_config.NumberColumn(format="%.1f%%"),
             },
         )
-    return performance, dividends
+    return performance, dividends, hints

@@ -18,9 +18,26 @@ MINOR_UNITS = {"GBp": ("GBP", 100), "GBX": ("GBP", 100), "ZAc": ("ZAR", 100), "I
 FUND_TYPES = {"ETF": "ETF", "MUTUALFUND": "Mutual fund"}
 
 POSITION_COLUMNS = [
-    "Ticker", "Name", "Shares", "Price", "Currency", "Value", "Cost", "P/L",
+    "Ticker", "Account", "Name", "Shares", "Price", "Currency", "Value", "Cost", "P/L",
     "P/L %", "Day change", "Weight %", "Sector", "Country",
 ]
+UNSPECIFIED_ACCOUNT = "Unspecified"
+
+# Columns summed when rows of one ticker are combined; the rest take the first row.
+_SUMMED = ["Shares", "Value", "Cost", "P/L", "Day change"]
+
+
+def _combine(positions: pd.DataFrame, keys) -> pd.DataFrame:
+    """Combine rows sharing `keys`; money is summed, P/L % and weights recomputed."""
+    if not positions.duplicated(keys).any():
+        return positions
+    aggregations = {c: "first" for c in positions.columns if c not in keys}
+    # A sum with any unknown cost (NaN) stays unknown rather than understating it.
+    aggregations.update({c: (lambda col: col.sum(min_count=len(col))) for c in _SUMMED if c not in ("Shares", "Value")})
+    aggregations.update({"Shares": "sum", "Value": "sum"})
+    combined = positions.groupby(keys, as_index=False, sort=False, dropna=False).agg(aggregations)
+    combined["P/L %"] = combined["P/L"] / combined["Cost"] * 100
+    return combined
 
 
 @dataclass
@@ -63,6 +80,15 @@ class Figures:
             return None
         previous = self.total_value - self.day_change
         return self.day_change / previous * 100 if previous else None
+
+    def by_ticker(self) -> pd.DataFrame:
+        """Positions with each ticker's accounts combined into one row, largest first."""
+        combined = _combine(self.positions.drop(columns="Weight %"), ["Ticker"])
+        combined["Account"] = (
+            self.positions.groupby("Ticker")["Account"].agg(lambda a: ", ".join(dict.fromkeys(a))).reindex(combined["Ticker"]).values
+        )
+        combined["Weight %"] = combined["Value"] / self.total_value * 100 if self.total_value else 0.0
+        return combined[POSITION_COLUMNS].sort_values("Value", ascending=False, ignore_index=True)
 
     def allocation(self, by: str) -> pd.DataFrame:
         """Value and weight per group of `by` (a POSITION_COLUMNS name), largest first."""
@@ -192,6 +218,7 @@ def compute(holdings, quotes: dict, fx: dict, base: str) -> Figures:
 
         rows.append({
             "Ticker": h["ticker"],
+            "Account": h.get("account") or UNSPECIFIED_ACCOUNT,
             "Name": quote.name,
             "Shares": shares,
             "Price": price,
@@ -206,14 +233,8 @@ def compute(holdings, quotes: dict, fx: dict, base: str) -> Figures:
         })
 
     positions = pd.DataFrame(rows, columns=[c for c in POSITION_COLUMNS if c != "Weight %"])
-    # The same ticker can appear twice in the editor; combine it like the importers do.
-    if positions["Ticker"].duplicated().any():
-        positions = positions.groupby("Ticker", as_index=False, sort=False).agg({
-            "Name": "first", "Shares": "sum", "Price": "first", "Currency": "first",
-            "Value": "sum", "Cost": lambda s: s.sum(min_count=len(s)), "P/L": lambda s: s.sum(min_count=len(s)),
-            "Day change": lambda s: s.sum(min_count=len(s)), "Sector": "first", "Country": "first",
-        })
-        positions["P/L %"] = positions["P/L"] / positions["Cost"] * 100
+    # A ticker can appear twice in one account in the editor; combine it like the importers do.
+    positions = _combine(positions, ["Ticker", "Account"])
     total_value = float(positions["Value"].sum())
     positions["Weight %"] = positions["Value"] / total_value * 100 if total_value else 0.0
     positions = positions[POSITION_COLUMNS].sort_values("Value", ascending=False, ignore_index=True)
@@ -261,16 +282,16 @@ def to_markdown(figures: Figures) -> str:
         lines.append(f"- No live price found for: {', '.join(figures.unpriced)} (excluded from totals)")
     lines += [
         "",
-        f"| Ticker | Name | Shares | Price | Ccy | Value ({base}) | Cost ({base}) | P/L ({base}) | P/L % | Weight % | Sector | Country |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        f"| Ticker | Account | Name | Shares | Price | Ccy | Value ({base}) | Cost ({base}) | P/L ({base}) | P/L % | Weight % | Sector | Country |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in figures.positions.to_dict("records"):
         lines.append(
-            f"| {r['Ticker']} | {r['Name']} | {r['Shares']:g} | {r['Price']:,.2f} | {r['Currency']} "
+            f"| {r['Ticker']} | {r['Account']} | {r['Name']} | {r['Shares']:g} | {r['Price']:,.2f} | {r['Currency']} "
             f"| {r['Value']:,.2f} | {_amount(r['Cost'])} | {_amount(r['P/L'])} | {_pct(r['P/L %'])} "
             f"| {r['Weight %']:.1f} | {r['Sector']} | {r['Country']} |"
         )
-    for by in ("Sector", "Country", "Currency"):
+    for by in ("Account", "Sector", "Country", "Currency"):
         parts = ", ".join(f"{g} {w:.1f}%" for g, w in figures.allocation(by)[["Group", "Weight %"]].itertuples(index=False))
         lines.append("")
         lines.append(f"Allocation by {by.lower()}: {parts}")

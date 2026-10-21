@@ -12,13 +12,14 @@ from agno.tools.yfinance import YFinanceTools
 from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.tools.calculator import CalculatorTools
 
+import account_hints
 import branding
 import brokerage_sync
 import dashboard
 import portfolio_analytics
 import portfolio_metrics
 import report
-from portfolio_import import COLUMNS, read_holdings, template_csv
+from portfolio_import import ACCOUNT_TYPES, COLUMNS, normalize_account, read_holdings, template_csv
 
 load_dotenv()
 
@@ -48,7 +49,11 @@ actionable report. For every portfolio you receive, you should:
    historical_prices. Use stock_price only for tickers listed as having
    no live price. Use CalculatorTools for any additional math.
 3. Where the figures have no P/L for a position (unknown average buy
-   price), say so rather than estimating one.
+   price), say so rather than estimating one. Positions are listed per
+   account (TFSA, RRSP, FHSA, Non-registered...). When account placement
+   hints are included, mention the relevant ones, describe them as general
+   Canadian tax rules rather than tax advice, and never tell the user to
+   move money in a way that triggers a withdrawal or over-contribution.
 4. Summarize portfolio-level metrics from the figures: total cost basis,
    total market value, total unrealized P/L, and sector, country and
    currency concentration. When the message includes a backtest (return
@@ -187,25 +192,29 @@ def parse_portfolio(rows):
                 "avg_price": avg_price,
                 # Blank means the cost is in the currency the ticker trades in.
                 "currency": currency or None,
+                "account": normalize_account(_cell(row.get("Account"))) or None,
             }
         )
     return holdings
 
 
-def format_prompt(holdings, question: str, figures=None, performance=None, dividends=None) -> str:
+def format_prompt(holdings, question: str, figures=None, performance=None, dividends=None, hints=None) -> str:
     lines = ["Here is my current stock portfolio:", ""]
-    lines.append("| Ticker | Shares | Avg Buy Price | Currency |")
-    lines.append("|--------|--------|---------------|----------|")
+    lines.append("| Ticker | Shares | Avg Buy Price | Currency | Account |")
+    lines.append("|--------|--------|---------------|----------|---------|")
     for h in holdings:
         avg = h["avg_price"] if h["avg_price"] is not None else "unknown"
         currency = h["currency"] or "same as listing"
+        account = h.get("account") or "unspecified"
         lines.append(
-            f"| {h['ticker']} | {h['shares']} | {avg} | {currency} |"
+            f"| {h['ticker']} | {h['shares']} | {avg} | {currency} | {account} |"
         )
     if figures is not None:
         lines += ["", portfolio_metrics.to_markdown(figures)]
     if performance is not None or dividends is not None:
         lines += ["", portfolio_analytics.to_markdown(performance, dividends)]
+    if figures is not None and not figures.positions.empty:
+        lines += ["", account_hints.to_markdown(figures, dividends, hints or [])]
     lines.append("")
     lines.append(question.strip() or "Analyze my portfolio end-to-end.")
     return "\n".join(lines)
@@ -365,9 +374,9 @@ def main() -> None:
     if "holdings" not in st.session_state:
         st.session_state.holdings = pd.DataFrame(
             [
-                {"Ticker": "AAPL", "Shares": 10, "Avg Buy Price": 150.0, "Currency": "USD"},
-                {"Ticker": "MSFT", "Shares": 5, "Avg Buy Price": 310.0, "Currency": "USD"},
-                {"Ticker": "NVDA", "Shares": 4, "Avg Buy Price": 420.0, "Currency": "USD"},
+                {"Ticker": "AAPL", "Shares": 10, "Avg Buy Price": 150.0, "Currency": "USD", "Account": "TFSA"},
+                {"Ticker": "MSFT", "Shares": 5, "Avg Buy Price": 310.0, "Currency": "USD", "Account": "RRSP"},
+                {"Ticker": "NVDA", "Shares": 4, "Avg Buy Price": 420.0, "Currency": "USD", "Account": "Non-registered"},
             ],
             columns=COLUMNS,
         )
@@ -419,13 +428,20 @@ def main() -> None:
         width="stretch",
         hide_index=True,
         key=f"portfolio_editor_{st.session_state.editor_version}",
+        column_config={
+            "Account": st.column_config.SelectboxColumn(
+                options=ACCOUNT_TYPES,
+                help="TFSA, RRSP, FHSA... Used for per-account totals and placement hints. Optional.",
+            ),
+        },
     )
     holdings = parse_portfolio(edited.to_dict("records"))
     figures = performance = dividends = None
+    hints = []
     if holdings:
         with st.spinner("Fetching live prices..."):
             figures = dashboard.load_figures(holdings, base)
-        performance, dividends = dashboard.render(figures)
+        performance, dividends, hints = dashboard.render(figures)
 
     question = st.text_area(
         "What would you like the analyst to focus on?",
@@ -444,7 +460,7 @@ def main() -> None:
             st.error("AI_GATEWAY_API_KEY is missing.")
             return
 
-        prompt = format_prompt(holdings, question, figures, performance, dividends)
+        prompt = format_prompt(holdings, question, figures, performance, dividends, hints)
         st.session_state.pop("analysis", None)
         st.session_state.chat = []
 
