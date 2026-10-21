@@ -16,12 +16,15 @@ import branding
 import brokerage_sync
 import dashboard
 import portfolio_metrics
+import report
 from portfolio_import import COLUMNS, read_holdings, template_csv
 
 load_dotenv()
 
 # Vercel AI Gateway exposes an OpenAI-compatible API.
 AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1"
+
+CHAT_AVATARS = {"user": ":material/person:", "assistant": ":material/monitoring:"}
 
 # Query parameter holding the encrypted SnapTrade user (brokerage_sync.seal_user).
 BROKERAGE_PARAM = "brokerage"
@@ -85,9 +88,70 @@ def build_agent(model_id: str) -> Agent:
             CalculatorTools(),
         ],
         instructions=[INSTRUCTIONS],
-        show_tool_calls=True,
+        # Tool calls show in a status box (run_streaming), not in the report text.
+        show_tool_calls=False,
         markdown=True,
     )
+
+
+def run_streaming(agent: Agent, message: str, status, messages=None) -> str:
+    """Stream an agent run into the page, listing data lookups in `status`. Returns the full text."""
+    events = agent.run(message, messages=messages, stream=True, stream_intermediate_steps=True)
+    text = st.write_stream(report.stream_text(events, on_tool=status.write))
+    return text if isinstance(text, str) else "".join(map(str, text))
+
+
+def analysis_section(model_id: str) -> None:
+    """The finished report, its downloads, and follow-up questions."""
+    analysis = st.session_state.analysis
+    chat = st.session_state.setdefault("chat", [])
+
+    st.subheader("Analyst report")
+    st.caption(f"{analysis['created']} · {analysis['model']} · figures in {analysis['base']}")
+    with st.container(border=True):
+        st.markdown(analysis["report"])
+    downloads = st.container(horizontal=True)
+    downloads.download_button(
+        "Markdown",
+        report.to_markdown(analysis, chat),
+        file_name=report.filename(analysis, "md"),
+        mime="text/markdown",
+        icon=":material/download:",
+        on_click="ignore",
+    )
+    downloads.download_button(
+        "HTML (print to PDF)",
+        report.to_html(analysis, chat),
+        file_name=report.filename(analysis, "html"),
+        mime="text/html",
+        icon=":material/print:",
+        on_click="ignore",
+        help="Open the file in a browser and print it to save a PDF.",
+    )
+
+    st.subheader("Ask a follow-up")
+    for message in chat:
+        with st.chat_message(message["role"], avatar=CHAT_AVATARS[message["role"]]):
+            st.markdown(message["content"])
+    question = st.chat_input("Ask about this portfolio, e.g. what if I sold half my NVDA?")
+    if not question:
+        return
+    with st.chat_message("user", avatar=CHAT_AVATARS["user"]):
+        st.markdown(question)
+    with st.chat_message("assistant", avatar=CHAT_AVATARS["assistant"]):
+        status = st.status("Looking into it...", expanded=False)
+        try:
+            answer = run_streaming(
+                build_agent(model_id), question, status, messages=report.history_messages(analysis, chat)
+            )
+        except Exception as exc:  # model or tool failures shouldn't lose the conversation
+            status.update(label="Couldn't answer", state="error")
+            st.error(f"The analyst couldn't answer: {exc}")
+            return
+        status.update(label="Done", state="complete")
+    chat += [{"role": "user", "content": question}, {"role": "assistant", "content": answer}]
+    # Rerun so the downloads include the new answer.
+    st.rerun()
 
 
 def _cell(value):
@@ -374,14 +438,25 @@ def main() -> None:
             st.error("AI_GATEWAY_API_KEY is missing.")
             return
 
-        agent = build_agent(model_id)
         prompt = format_prompt(holdings, question, figures)
-
-        with st.spinner("Reviewing your portfolio..."):
-            response = agent.run(prompt)
+        st.session_state.pop("analysis", None)
+        st.session_state.chat = []
 
         st.subheader("Analyst report")
-        st.markdown(getattr(response, "content", str(response)))
+        status = st.status("Reviewing your portfolio...", expanded=False)
+        try:
+            text = run_streaming(build_agent(model_id), prompt, status)
+        except Exception as exc:  # model or tool failures shouldn't crash the app
+            status.update(label="The review stopped", state="error")
+            st.error(f"The analyst couldn't finish: {exc}")
+            return
+        status.update(label="Review complete", state="complete")
+        st.session_state.analysis = report.new_analysis(prompt, text, model_id, base)
+        # Rerun to show the report from session state, with downloads and chat.
+        st.rerun()
+
+    if "analysis" in st.session_state:
+        analysis_section(model_id)
 
 
 if __name__ == "__main__":

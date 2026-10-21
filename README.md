@@ -11,6 +11,9 @@ Adapted from [`simple_ai_agents/stock_portfolio_analyst`](https://github.com/Ari
 - **Connect brokerage (optional)**: pull live holdings from Wealthsimple, Questrade, IBKR and other brokers through [SnapTrade](https://snaptrade.com/), read-only. You sign in on SnapTrade's page, so the app never sees your brokerage password
 - **Live dashboard**: as soon as holdings are entered, figures are computed in code from live Yahoo Finance quotes: market value, cost basis, unrealized P/L and today's change, in CAD or USD at live FX rates (London pence handled). Allocation by holding, sector, country and currency, a gain/loss chart, and a positions table
 - **Verified numbers for the analyst**: the computed figures go into the analyst's prompt, so the report quotes them instead of doing its own arithmetic
+- **Streaming report**: the analyst's review appears as it's written, with each data lookup (fundamentals, news, web search) listed in a status box
+- **Follow-up chat**: ask questions about the report ("what if I sold half my NVDA?"); the analyst keeps the report and figures in context
+- **Downloads**: save the report and follow-ups as Markdown, or as a styled HTML page that prints cleanly to PDF
 - **Live market data**: prices, fundamentals, analyst ratings, news via YFinance
 - **Web context**: DuckDuckGo search for market news not covered by YFinance
 - **Math that adds up**: a Calculator tool keeps the agent honest on totals, weights, and P/L
@@ -143,7 +146,8 @@ Positions are read with `get_all_account_positions`. SnapTrade's older `get_user
 2. Optionally tweak the focus question (e.g. _"Assess my tech concentration risk"_ or _"Which position looks most overvalued?"_).
 3. Check the **Dashboard** below the table: totals, allocation, gains and losses, and every position. Pick CAD or USD under **Report currency** in the sidebar. A blank `Currency` means the average buy price is in the currency the ticker trades in.
 4. Click **Analyze portfolio**.
-5. Read the report: holdings table with live prices and P/L, portfolio-level metrics, risk flags, and 3–5 rebalancing recommendations.
+5. Read the report as it streams in: holdings table with live prices and P/L, portfolio-level metrics, risk flags, and 3–5 rebalancing recommendations.
+6. Ask follow-up questions in the box under the report, and download it as Markdown or HTML (open the HTML file and print it to save a PDF). The report and conversation last for the browser session.
 
 ## 🧪 Tests
 

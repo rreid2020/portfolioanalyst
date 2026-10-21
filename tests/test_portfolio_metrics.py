@@ -6,8 +6,9 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
+
+from agno.run.response import RunResponseContentEvent
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -131,7 +132,9 @@ class DashboardUITest(unittest.TestCase):
 
         prompts = []
         agent = mock.MagicMock()
-        agent.return_value.run.side_effect = lambda prompt: prompts.append(prompt) or SimpleNamespace(content="Report")
+        agent.return_value.run.side_effect = lambda prompt, **kwargs: prompts.append(prompt) or iter(
+            [RunResponseContentEvent(content="Report")]
+        )
         with mock.patch("agno.agent.Agent", agent):
             app = AppTest.from_file(str(ROOT / "main.py"), default_timeout=60).run()
             self.assertFalse(app.exception)
