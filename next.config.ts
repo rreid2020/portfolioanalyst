@@ -5,6 +5,8 @@ import type { NextConfig } from "next";
 const PY_DEV_URL = process.env.PY_API_URL ?? "http://127.0.0.1:8000";
 
 const nextConfig: NextConfig = {
+  // lets a production build run beside `next dev` without overwriting its files (NEXT_DIST_DIR=.next-build)
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // hide the "N" dev-tools badge in the corner while running locally (it never shows in production)
   devIndicators: false,
   // PGlite ships a WASM Postgres; load it from node_modules rather than bundling it.

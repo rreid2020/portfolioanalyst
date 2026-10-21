@@ -3,7 +3,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { migrateDb } from "@/db";
 import {
-  countPortfolios, deletePortfolio, listPortfolios, loadPortfolio, PortfolioNameError, renamePortfolio, savePortfolio, touchUser,
+  countPortfolios, deletePortfolio, listPortfolios, loadPortfolio, nameTaken, PortfolioNameError, renamePortfolio, savePortfolio, touchUser,
+  updatePortfolio,
   type Holding,
 } from "@/lib/portfolios";
 
@@ -73,6 +74,20 @@ describe("saved portfolios", () => {
     expect(await deletePortfolio(ALICE, id)).toBe(true);
     expect(await loadPortfolio(ALICE, id)).toBeNull();
     expect(await countPortfolios(ALICE)).toBe(before - 1);
+  });
+
+  it("updates a portfolio in place", async () => {
+    const { id } = await savePortfolio(ALICE, "Edit me", HOLDINGS);
+    await savePortfolio(ALICE, "Also mine", HOLDINGS);
+    expect(await updatePortfolio(ALICE, id, "Edited", [{ ticker: "vfv.to", shares: 3, avgBuyPrice: null, currency: null, account: "TFSA" }])).toBe(true);
+    const loaded = await loadPortfolio(ALICE, id);
+    expect(loaded?.name).toBe("Edited");
+    expect(loaded?.holdings).toEqual([{ ticker: "VFV.TO", shares: 3, avgBuyPrice: null, currency: null, account: "TFSA" }]);
+    await expect(updatePortfolio(ALICE, id, "Also mine", [])).rejects.toBeInstanceOf(PortfolioNameError);
+    expect(await updatePortfolio(BOB, id, "Stolen", [])).toBe(false);
+    expect((await loadPortfolio(ALICE, id))?.holdings).toHaveLength(1);
+    expect(await nameTaken(ALICE, " Edited ")).toBe(true);
+    expect(await nameTaken(BOB, "Edited")).toBe(false);
   });
 
   it("names are validated", async () => {

@@ -33,6 +33,8 @@ export default async function PortfolioPage({ params, searchParams }: { params: 
         subtitle={`Saved ${date(portfolio.updatedAt)} · ${portfolio.holdings.length} holding${portfolio.holdings.length === 1 ? "" : "s"}`}
         back={{ href: "/portfolios", label: "Portfolios" }}
         actions={
+          <>
+          <Link href={`/portfolios/${portfolio.id}/edit`} className="btn btn-secondary">Edit holdings</Link>
           <div className="flex rounded-md border border-slate-300 bg-white p-0.5 text-xs font-medium" role="group" aria-label="Report currency">
             {BASES.map((b) => (
               <Link key={b} href={`?base=${b}`} className={`rounded px-2.5 py-1 ${b === base ? "bg-brand-600 text-white" : "text-slate-700 hover:bg-slate-100"}`} aria-current={b === base}>
@@ -40,6 +42,7 @@ export default async function PortfolioPage({ params, searchParams }: { params: 
               </Link>
             ))}
           </div>
+          </>
         }
       />
 

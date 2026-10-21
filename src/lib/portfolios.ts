@@ -106,6 +106,33 @@ export async function savePortfolio(userId: string, name: string, rows: Holding[
   });
 }
 
+/** Replace one portfolio's name and holdings in place. False if it isn't this user's. */
+export async function updatePortfolio(userId: string, id: number, name: string, rows: Holding[]): Promise<boolean> {
+  need(userId);
+  const valid = validName(name);
+  const cleaned = clean(rows);
+  return db.transaction(async (tx) => {
+    const [mine] = await tx.select({ id: portfolios.id }).from(portfolios).where(and(eq(portfolios.id, id), eq(portfolios.userId, userId)));
+    if (!mine) return false;
+    const [clash] = await tx
+      .select({ id: portfolios.id })
+      .from(portfolios)
+      .where(and(eq(portfolios.userId, userId), eq(portfolios.name, valid), ne(portfolios.id, id)));
+    if (clash) throw new PortfolioNameError(`You already have a portfolio named "${valid}".`);
+    await tx.update(portfolios).set({ name: valid, updatedAt: now() }).where(eq(portfolios.id, id));
+    await tx.delete(holdings).where(eq(holdings.portfolioId, id));
+    if (cleaned.length) await tx.insert(holdings).values(cleaned.map((h) => ({ ...h, portfolioId: id })));
+    return true;
+  });
+}
+
+/** Saving a new portfolio under a name that's taken would replace it; callers check first. */
+export async function nameTaken(userId: string, name: string): Promise<boolean> {
+  need(userId);
+  const [row] = await db.select({ id: portfolios.id }).from(portfolios).where(and(eq(portfolios.userId, userId), eq(portfolios.name, name.trim())));
+  return Boolean(row);
+}
+
 /** The portfolio and its holdings in their saved order, or null if it isn't this user's. */
 export async function loadPortfolio(userId: string, id: number) {
   need(userId);

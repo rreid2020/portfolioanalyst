@@ -3,7 +3,9 @@
 Run: python -m unittest discover -s tests
 """
 import base64
+import json
 import os
+import re
 import sys
 import time
 import unittest
@@ -214,6 +216,11 @@ class MetaAndResearchTest(ApiTestCase):
         self.assertEqual(body["columns"], ["ticker", "shares", "avgBuyPrice", "currency", "account"])
         self.assertIn("TFSA", body["accountTypes"])
         self.assertEqual(body["defaultBenchmark"], "XIC.TO")
+
+    def test_editor_account_types_match(self):
+        source = (ROOT / "src" / "lib" / "accounts.ts").read_text(encoding="utf-8")
+        listed = json.loads(re.search(r"ACCOUNT_TYPES = (\[.*?\]) as const", source).group(1))
+        self.assertEqual(listed, self.client.get("/api/py/meta").json()["accountTypes"])
 
     def test_research_lookups(self):
         with mock.patch.object(research, "fundamentals", return_value={"symbol": "AAPL", "pe_ratio": 30.0}) as f:

@@ -10,14 +10,21 @@ export default async function PortfoliosPage() {
   const saved = await listPortfolios(await requireUser());
   return (
     <>
-      <PageHeader title="Portfolios" subtitle="Your saved portfolios. Open one to see live values, performance and the analyst." />
+      <PageHeader
+        title="Portfolios"
+        subtitle="Your saved portfolios. Open one to see live values, performance and the analyst."
+        actions={<Link href="/portfolios/new" className="btn">New portfolio</Link>}
+      />
       <Card>
         {saved.length === 0 ? (
           <Empty>
             <p>No saved portfolios yet.</p>
-            <form action={createExampleAction} className="mt-4">
-              <button className="btn">Start with an example portfolio</button>
-            </form>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              <Link href="/portfolios/new" className="btn">Add your holdings</Link>
+              <form action={createExampleAction}>
+                <button className="btn btn-secondary">Try an example portfolio</button>
+              </form>
+            </div>
           </Empty>
         ) : (
           <table className="grid-table">

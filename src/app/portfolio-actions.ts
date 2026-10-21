@@ -2,7 +2,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/user";
-import { deletePortfolio, PortfolioNameError, renamePortfolio, savePortfolio, type Holding } from "@/lib/portfolios";
+import {
+  deletePortfolio, nameTaken, PortfolioNameError, renamePortfolio, savePortfolio, updatePortfolio, validName, type Holding,
+} from "@/lib/portfolios";
 
 export type ActionState = { error?: string; ok?: string } | undefined;
 
@@ -44,13 +46,29 @@ export async function createExampleAction() {
   redirect(`/portfolios/${id}`);
 }
 
-export async function saveAction(name: string, rows: Holding[]): Promise<{ error?: string; ok?: string; id?: number }> {
+/** Save the editor's holdings as a new portfolio. Refuses a name that's taken rather than replacing it. */
+export async function saveNewAction(name: string, rows: Holding[]): Promise<ActionState> {
   const userId = await requireUser();
+  let id: number;
   try {
-    const { id, replaced } = await savePortfolio(userId, name, rows);
-    revalidatePath("/portfolios");
-    return { id, ok: `${replaced ? "Updated" : "Saved"} "${name.trim()}".` };
+    if (await nameTaken(userId, validName(name)))
+      return { error: `You already have a portfolio named "${name.trim()}". Choose another name, or open that one to edit it.` };
+    ({ id } = await savePortfolio(userId, name, rows));
   } catch (e) {
     return nameError(e);
   }
+  revalidatePath("/portfolios");
+  redirect(`/portfolios/${id}`);
+}
+
+/** Save the editor's name and holdings over an existing portfolio. */
+export async function updateAction(id: number, name: string, rows: Holding[]): Promise<ActionState> {
+  const userId = await requireUser();
+  try {
+    if (!(await updatePortfolio(userId, id, name, rows))) return { error: "That portfolio no longer exists." };
+  } catch (e) {
+    return nameError(e);
+  }
+  revalidatePath("/portfolios");
+  redirect(`/portfolios/${id}`);
 }
