@@ -40,6 +40,8 @@ class Figures:
     positions: pd.DataFrame  # POSITION_COLUMNS, money columns in the base currency
     fx: dict  # currency -> base-currency units per 1 unit
     unpriced: list = field(default_factory=list)
+    # ticker -> divisor from the quote's units to its currency (100 for GBp)
+    unit_divisors: dict = field(default_factory=dict)
     total_value: float = 0.0
     total_cost: float | None = None  # positions with a known average price only
     cost_covered_value: float = 0.0  # market value of those positions
@@ -153,6 +155,7 @@ def compute(holdings, quotes: dict, fx: dict, base: str) -> Figures:
     """
     rows = []
     unpriced = []
+    unit_divisors = {}
     total_cost = 0.0
     cost_covered_value = 0.0
     has_cost = False
@@ -165,6 +168,7 @@ def compute(holdings, quotes: dict, fx: dict, base: str) -> Figures:
             continue
         price, currency = normalize(quote.price, quote.currency)
         previous_close, _ = normalize(quote.previous_close, quote.currency)
+        unit_divisors[h["ticker"]] = MINOR_UNITS.get(quote.currency, (currency, 1))[1]
         cost_currency = h.get("currency") or currency
         if currency not in fx or (h.get("avg_price") is not None and cost_currency not in fx):
             unpriced.append(h["ticker"])
@@ -219,6 +223,7 @@ def compute(holdings, quotes: dict, fx: dict, base: str) -> Figures:
         positions=positions,
         fx={c: r for c, r in fx.items() if c != base},
         unpriced=unpriced,
+        unit_divisors=unit_divisors,
         total_value=total_value,
         total_cost=total_cost if has_cost else None,
         cost_covered_value=cost_covered_value,

@@ -1,8 +1,9 @@
-"""Live portfolio dashboard: summary tiles, allocation and P/L charts, positions table."""
+"""Live portfolio dashboard: summary tiles, allocation, P/L, performance, risk and dividends."""
 import altair as alt
 import pandas as pd
 import streamlit as st
 
+import portfolio_analytics
 import portfolio_metrics
 
 # Validated with the dataviz palette checker: both clear the chroma floor and
@@ -11,6 +12,8 @@ GAIN = "#008C99"  # brand teal, nudged for chart legibility
 LOSS = "#C2571A"
 INK_MUTED = "#475569"
 GRID = "#E5E9EF"
+BENCHMARK_GRAY = "#94A3B8"  # context series in emphasis charts
+NEUTRAL = "#EEF1F4"  # diverging midpoint
 
 MAX_BARS = 12  # longer lists fold their tail into "Other"
 
@@ -25,6 +28,11 @@ def _quotes(tickers: tuple) -> dict:
 @st.cache_data(ttl=300, show_spinner=False)
 def _fx(currencies: tuple, base: str) -> dict:
     return portfolio_metrics.fetch_fx(currencies, base)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _history(symbols: tuple):
+    return portfolio_analytics.fetch_history(symbols)
 
 
 def load_figures(holdings, base: str):
@@ -133,7 +141,195 @@ def pl_chart(positions: pd.DataFrame, base: str):
     return _axis_config(layers), 34 * len(data) + 110
 
 
-def render(figures) -> None:
+def performance_chart(performance):
+    """Portfolio vs benchmark, indexed to 100, with a hover crosshair. Returns (chart, height)."""
+    name = portfolio_analytics.BENCHMARKS[performance.benchmark][0]
+    wide = performance.series.rename(columns={"Portfolio": "Your holdings", "Benchmark": name}).reset_index(names="Date")
+    data = wide.melt("Date", var_name="Series", value_name="Index")
+    series = [c for c in ["Your holdings", name] if c in wide.columns]
+    color = alt.Color(
+        "Series:N",
+        scale=alt.Scale(domain=series, range=[GAIN, BENCHMARK_GRAY][: len(series)]),
+        legend=alt.Legend(title=None, orient="top", labelLimit=320),
+    )
+    x = alt.X("Date:T", title=None, axis=alt.Axis(grid=False, format="%b %Y", labelAngle=0, tickCount=6))
+    y = alt.Y("Index:Q", title="Growth of 100", scale=alt.Scale(zero=False), axis=alt.Axis(tickCount=5))
+    lines = alt.Chart(data).mark_line(strokeWidth=2).encode(x=x, y=y, color=color)
+
+    hover = alt.selection_point(fields=["Date"], nearest=True, on="pointerover", empty=False, clear="pointerout")
+    tooltip = [alt.Tooltip("Date:T", format="%Y-%m-%d")] + [alt.Tooltip(f"{s}:Q", format=".1f") for s in series]
+    rule = alt.Chart(wide).mark_rule(color=INK_MUTED, strokeWidth=1).encode(
+        x="Date:T", opacity=alt.condition(hover, alt.value(0.6), alt.value(0)), tooltip=tooltip
+    ).add_params(hover)
+    points = lines.mark_point(filled=True, size=70, stroke="#fff", strokeWidth=2).encode(
+        opacity=alt.condition(hover, alt.value(1), alt.value(0))
+    ).transform_filter(hover)
+    last = data.sort_values("Date").groupby("Series").tail(1)
+    end_labels = alt.Chart(last).mark_text(align="left", dx=6, fontSize=12, color=INK_MUTED).encode(
+        x="Date:T", y="Index:Q", text=alt.Text("Index:Q", format=".0f")
+    )
+    return _axis_config(lines + rule + points + end_labels), 320
+
+
+def correlation_chart(correlation: pd.DataFrame):
+    """Heatmap of daily-return correlations, teal positive and orange negative. Returns (chart, height)."""
+    order = list(correlation.columns)
+    data = correlation.rename_axis("A").reset_index().melt("A", var_name="B", value_name="Correlation")
+    cells_base = alt.Chart(data).encode(
+        x=alt.X("B:N", sort=order, title=None, axis=alt.Axis(labelAngle=0, orient="top", labelOverlap=False)),
+        y=alt.Y("A:N", sort=order, title=None, axis=alt.Axis(labelOverlap=False)),
+    )
+    cells = cells_base.mark_rect(stroke="#fff", strokeWidth=2, cornerRadius=3).encode(
+        color=alt.Color(
+            "Correlation:Q",
+            scale=alt.Scale(domain=[-1, 0, 1], range=[LOSS, NEUTRAL, GAIN], interpolate="lab"),
+            legend=alt.Legend(title="Correlation", orient="right", gradientLength=140),
+        ),
+        tooltip=[
+            alt.Tooltip("A:N", title="Holding"),
+            alt.Tooltip("B:N", title="With"),
+            alt.Tooltip("Correlation:Q", format=".2f"),
+        ],
+    )
+    text = cells_base.mark_text(fontSize=11).encode(
+        text=alt.Text("Correlation:Q", format=".2f"),
+        color=alt.condition("abs(datum.Correlation) > 0.6", alt.value("#fff"), alt.value("#0F172A")),
+    )
+    return _axis_config(cells + text), 40 * len(order) + 50
+
+
+def income_chart(rows: pd.DataFrame, base: str):
+    """Expected annual dividend income per holding, largest first. Returns (chart, height)."""
+    data = rows[rows["Annual income"] > 0].head(MAX_BARS).assign(
+        Label=lambda d: d["Annual income"].map(lambda v: f"{v:,.0f}")
+    )
+    y = alt.Y("Ticker:N", sort=None, title=None, axis=alt.Axis(labelOverlap=False))
+    tooltip = [
+        alt.Tooltip("Ticker:N"),
+        alt.Tooltip("Annual income:Q", title=f"Income ({base}/yr)", format=",.2f"),
+        alt.Tooltip("Yield %:Q", title="Yield %", format=".2f"),
+    ]
+    bars = alt.Chart(data).mark_bar(color=GAIN, cornerRadiusEnd=4, height=alt.RelativeBandSize(0.6)).encode(
+        x=alt.X(
+            "Annual income:Q", title=f"Expected income ({base} per year)", axis=alt.Axis(grid=True, tickCount=5),
+            scale=alt.Scale(domain=[0, data["Annual income"].max() * 1.15], nice=False),
+        ),
+        y=y,
+        tooltip=tooltip,
+    )
+    labels = alt.Chart(data).mark_text(align="left", dx=6, color=INK_MUTED, fontSize=12).encode(
+        x="Annual income:Q", y=y, text="Label:N", tooltip=tooltip
+    )
+    return _axis_config(bars + labels), 34 * len(data) + 70
+
+
+def _signed_pct(value):
+    return "—" if value is None or pd.isna(value) else f"{value:+.1f}%"
+
+
+def performance_tab(figures, history):
+    """Period and benchmark pickers, risk tiles, growth chart, correlations. Returns the Performance."""
+    controls = st.columns([3, 2])
+    period = controls[0].segmented_control(
+        "Period", list(portfolio_analytics.PERIODS), default="1Y", key="performance_period"
+    ) or "1Y"
+    benchmark = controls[1].selectbox(
+        "Benchmark",
+        list(portfolio_analytics.BENCHMARKS),
+        format_func=lambda symbol: portfolio_analytics.BENCHMARKS[symbol][0],
+        key="performance_benchmark",
+    )
+    performance = portfolio_analytics.compute_performance(figures, history, benchmark, period)
+    if performance is None:
+        st.info("Not enough price history for these holdings yet.")
+        return None
+
+    name = portfolio_analytics.BENCHMARKS[benchmark][0]
+    vs = None
+    if performance.benchmark_return is not None:
+        vs = f"{performance.portfolio_return - performance.benchmark_return:+.1f} pts vs {benchmark.split('.')[0]}"
+    return_help = f"Benchmark {name}: {_signed_pct(performance.benchmark_return)}."
+    if performance.annualized_return is not None:
+        return_help += f" Annualized: {_signed_pct(performance.annualized_return)}."
+    tiles = st.columns(4)
+    tiles[0].metric(f"Return ({period})", _signed_pct(performance.portfolio_return), vs, border=True, help=return_help)
+    tiles[1].metric(
+        "Volatility", "—" if performance.volatility is None else f"{performance.volatility:.1f}%", border=True,
+        help="Annualized standard deviation of daily returns.",
+    )
+    tiles[2].metric(
+        "Beta", "—" if performance.beta is None else f"{performance.beta:.2f}", border=True,
+        help=f"Sensitivity to {name}: 1.0 moves with it, above 1 swings more.",
+    )
+    tiles[3].metric(
+        "Max drawdown", f"{performance.max_drawdown:.1f}%", border=True,
+        help=f"Largest fall from a peak: {performance.drawdown_peak:%Y-%m-%d} to {performance.drawdown_trough:%Y-%m-%d}.",
+    )
+
+    note = (
+        f"Backtest of today's holdings from {performance.start:%b %d, %Y}: current share counts valued each day "
+        f"in {figures.base} with dividends reinvested. It shows how this mix would have done, not your actual returns."
+    )
+    if performance.late_starts:
+        note += " Starts later than the period because " + ", ".join(
+            f"{t} has prices only from {d:%b %Y}" for t, d in performance.late_starts.items()
+        ) + "."
+    if performance.excluded:
+        note += f" No price history for {', '.join(performance.excluded)}."
+    st.caption(note)
+    chart, height = performance_chart(performance)
+    st.altair_chart(chart, width="stretch", height=height)
+
+    if not performance.correlation.empty:
+        st.markdown("**How your holdings move together**")
+        caption = (
+            "Correlation of daily returns over the period. Near 1, two holdings rise and fall together; "
+            "near 0 or below, they diversify each other."
+        )
+        if len(figures.positions) > portfolio_analytics.MAX_CORRELATION_HOLDINGS:
+            caption += f" Largest {portfolio_analytics.MAX_CORRELATION_HOLDINGS} holdings shown."
+        st.caption(caption)
+        chart, height = correlation_chart(performance.correlation)
+        st.altair_chart(chart, width="stretch", height=height)
+    return performance
+
+
+def dividends_tab(figures, history):
+    """Income tiles, income chart and table. Returns the Dividends."""
+    dividends = portfolio_analytics.compute_dividends(figures, history)
+    base = figures.base
+    tiles = st.columns(2)
+    tiles[0].metric(f"Expected annual income ({base})", f"{dividends.total_income:,.0f}", border=True)
+    tiles[1].metric(
+        "Portfolio yield",
+        "—" if dividends.portfolio_yield is None else f"{dividends.portfolio_yield:.2f}%",
+        border=True,
+        help="Expected annual income as a share of market value.",
+    )
+    st.caption(
+        "Based on dividends paid over the past 12 months, at today's share counts and exchange rates. "
+        "Future payments can differ."
+    )
+    if (dividends.rows["Annual income"] > 0).any():
+        chart, height = income_chart(dividends.rows, base)
+        st.altair_chart(chart, width="stretch", height=height)
+        st.dataframe(
+            dividends.rows,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "Dividend/share": st.column_config.NumberColumn(format="%.4f", help="Past 12 months, listing currency"),
+                "Yield %": st.column_config.NumberColumn(format="%.2f%%"),
+                "Annual income": st.column_config.NumberColumn(f"Annual income ({base})", format="accounting"),
+            },
+        )
+    else:
+        st.info("None of these holdings paid a dividend in the past 12 months.")
+    return dividends
+
+
+def render(figures):
+    """Draw the dashboard. Returns (Performance or None, Dividends or None) for the analyst."""
     base = figures.base
     st.subheader("Dashboard")
     note = "Live Yahoo Finance quotes, which can be delayed up to 15 minutes; refreshed every 5 minutes."
@@ -144,7 +340,7 @@ def render(figures) -> None:
     if figures.unpriced:
         st.warning(f"No live price for {', '.join(figures.unpriced)}; left out of the totals. Check the ticker symbols.")
     if figures.positions.empty:
-        return
+        return None, None
 
     tiles = st.columns(4)
     tiles[0].metric(f"Market value ({base})", _money(figures.total_value), border=True)
@@ -160,7 +356,9 @@ def render(figures) -> None:
         help="Change since the previous close.",
     )
 
-    allocation_tab, pl_tab, positions_tab = st.tabs(["Allocation", "Gain / loss", "Positions"])
+    allocation_tab, pl_tab, performance_tab_, dividends_tab_, positions_tab = st.tabs(
+        ["Allocation", "Gain / loss", "Performance & risk", "Dividends", "Positions"]
+    )
     with allocation_tab:
         view = st.segmented_control(
             "Group by", list(ALLOCATION_VIEWS), default="Holding", key="allocation_view", label_visibility="collapsed"
@@ -176,6 +374,11 @@ def render(figures) -> None:
                 st.caption(f"No average buy price for {', '.join(missing)}, so no P/L is shown.")
         else:
             st.info("Add average buy prices to see gains and losses.")
+    history = _history(tuple(portfolio_analytics.history_symbols(figures.positions, base)))
+    with performance_tab_:
+        performance = performance_tab(figures, history)
+    with dividends_tab_:
+        dividends = dividends_tab(figures, history)
     with positions_tab:
         st.dataframe(
             figures.positions,
@@ -192,3 +395,4 @@ def render(figures) -> None:
                 "Weight %": st.column_config.NumberColumn(format="%.1f%%"),
             },
         )
+    return performance, dividends

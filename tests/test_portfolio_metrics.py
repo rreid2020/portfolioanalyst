@@ -13,6 +13,7 @@ from agno.run.response import RunResponseContentEvent
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import portfolio_analytics  # noqa: E402
 import portfolio_metrics  # noqa: E402
 from portfolio_metrics import Quote  # noqa: E402
 
@@ -108,6 +109,15 @@ def fake_fetch_quotes(tickers):
     return {t: QUOTES.get(t) for t in tickers}
 
 
+def fake_history(symbols):
+    from test_portfolio_analytics import BENCH, flat, make_history, ramp
+
+    return make_history(
+        {"AAPL": ramp(180, 200), "USDCAD=X": flat(1.4), "CADUSD=X": flat(1 / 1.4), **BENCH},
+        {"AAPL": {"2025-12-01": 1.0}},
+    )
+
+
 def fake_fetch_fx(currencies, base):
     return {c: FX[c] / FX[base] for c in currencies}
 
@@ -119,6 +129,7 @@ class DashboardUITest(unittest.TestCase):
             mock.patch.dict(os.environ, {**env, "AI_GATEWAY_API_KEY": "test"}, clear=True),
             mock.patch.object(portfolio_metrics, "fetch_quotes", side_effect=fake_fetch_quotes),
             mock.patch.object(portfolio_metrics, "fetch_fx", side_effect=fake_fetch_fx),
+            mock.patch.object(portfolio_analytics, "fetch_history", side_effect=fake_history),
         ]
         for p in patches:
             p.start()
@@ -144,6 +155,9 @@ class DashboardUITest(unittest.TestCase):
             self.assertEqual(tiles["Market value (CAD)"], "2,800")
             self.assertEqual(tiles["Unrealized P/L (CAD)"], "+700")
             self.assertTrue(any("MSFT, NVDA" in w.value for w in app.warning))
+            self.assertIn("Expected annual income (CAD)", tiles)
+            self.assertEqual(tiles["Expected annual income (CAD)"], "14")
+            self.assertIn("Return (1Y)", tiles)
 
             next(b for b in app.button if b.label == "Analyze portfolio").click().run()
 
@@ -151,6 +165,9 @@ class DashboardUITest(unittest.TestCase):
         (prompt,) = prompts
         self.assertIn("Figures computed from live Yahoo Finance quotes, in CAD", prompt)
         self.assertIn("Total market value: 2,800.00 CAD", prompt)
+        self.assertIn("Backtest of today's holdings", prompt)
+        self.assertIn("(1Y)", prompt)
+        self.assertIn("expected annual income 14.00 CAD", prompt)
 
     def test_report_currency_switch(self):
         from streamlit.testing.v1 import AppTest

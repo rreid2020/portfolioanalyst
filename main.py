@@ -15,6 +15,7 @@ from agno.tools.calculator import CalculatorTools
 import branding
 import brokerage_sync
 import dashboard
+import portfolio_analytics
 import portfolio_metrics
 import report
 from portfolio_import import COLUMNS, read_holdings, template_csv
@@ -50,7 +51,10 @@ actionable report. For every portfolio you receive, you should:
    price), say so rather than estimating one.
 4. Summarize portfolio-level metrics from the figures: total cost basis,
    total market value, total unrealized P/L, and sector, country and
-   currency concentration.
+   currency concentration. When the message includes a backtest (return
+   vs benchmark, volatility, beta, max drawdown, correlations) and
+   dividend income, use those too, and say that the backtest values
+   today's holdings over the period rather than the user's actual returns.
 5. Call out risk flags: over-concentration in a single ticker or
    sector, high P/E relative to peers, recent negative news, or
    weak analyst sentiment. Use DuckDuckGoTools when you need broader
@@ -188,7 +192,7 @@ def parse_portfolio(rows):
     return holdings
 
 
-def format_prompt(holdings, question: str, figures=None) -> str:
+def format_prompt(holdings, question: str, figures=None, performance=None, dividends=None) -> str:
     lines = ["Here is my current stock portfolio:", ""]
     lines.append("| Ticker | Shares | Avg Buy Price | Currency |")
     lines.append("|--------|--------|---------------|----------|")
@@ -200,6 +204,8 @@ def format_prompt(holdings, question: str, figures=None) -> str:
         )
     if figures is not None:
         lines += ["", portfolio_metrics.to_markdown(figures)]
+    if performance is not None or dividends is not None:
+        lines += ["", portfolio_analytics.to_markdown(performance, dividends)]
     lines.append("")
     lines.append(question.strip() or "Analyze my portfolio end-to-end.")
     return "\n".join(lines)
@@ -415,11 +421,11 @@ def main() -> None:
         key=f"portfolio_editor_{st.session_state.editor_version}",
     )
     holdings = parse_portfolio(edited.to_dict("records"))
-    figures = None
+    figures = performance = dividends = None
     if holdings:
         with st.spinner("Fetching live prices..."):
             figures = dashboard.load_figures(holdings, base)
-        dashboard.render(figures)
+        performance, dividends = dashboard.render(figures)
 
     question = st.text_area(
         "What would you like the analyst to focus on?",
@@ -438,7 +444,7 @@ def main() -> None:
             st.error("AI_GATEWAY_API_KEY is missing.")
             return
 
-        prompt = format_prompt(holdings, question, figures)
+        prompt = format_prompt(holdings, question, figures, performance, dividends)
         st.session_state.pop("analysis", None)
         st.session_state.chat = []
 
