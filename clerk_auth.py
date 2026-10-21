@@ -9,13 +9,17 @@ Environment variables:
   CLERK_JWT_KEY            the instance's PEM public key (Clerk dashboard > API keys);
                            verifies without a network call
   CLERK_ISSUER_URL         the Frontend API URL, e.g. https://clerk.axiomft.ca; used to
-                           fetch the JWKS when CLERK_JWT_KEY isn't set, and checked as `iss`
+                           fetch the JWKS when CLERK_JWT_KEY isn't set, and checked as `iss`.
+                           When unset it is read from NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+                           which encodes it, so the Next.js app's keys are enough.
   CLERK_AUTHORIZED_PARTIES optional, comma-separated origins allowed in `azp`,
                            e.g. https://portfolio.axiomft.ca,http://localhost:3000
 
 Like access.py: with neither key set, local development runs as one local
 user, and a Vercel deployment refuses every request.
 """
+import base64
+import binascii
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -41,8 +45,21 @@ class Caller:
     local: bool = False
 
 
+def issuer_from_publishable_key(key: str | None) -> str | None:
+    """https://<frontend api> from a Clerk publishable key: pk_test_/pk_live_ + base64("<host>$")."""
+    prefix, _, encoded = (key or "").strip().rpartition("_")
+    if prefix not in ("pk_test", "pk_live") or not encoded:
+        return None
+    try:
+        host = base64.b64decode(encoded + "=" * (-len(encoded) % 4)).decode()
+    except (binascii.Error, UnicodeDecodeError):
+        return None
+    host = host.rstrip("$")
+    return f"https://{host}" if host and "." in host and "/" not in host else None
+
+
 def _issuer() -> str | None:
-    issuer = os.getenv("CLERK_ISSUER_URL")
+    issuer = os.getenv("CLERK_ISSUER_URL") or issuer_from_publishable_key(os.getenv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"))
     return issuer.rstrip("/") if issuer else None
 
 

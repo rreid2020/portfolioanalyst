@@ -2,6 +2,7 @@
 
 Run: python -m unittest discover -s tests
 """
+import base64
 import os
 import sys
 import time
@@ -18,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # sibling test helpers
 
+import clerk_auth  # noqa: E402
 import portfolio_analytics  # noqa: E402
 import portfolio_metrics  # noqa: E402
 import portfolio_service  # noqa: E402
@@ -32,7 +34,7 @@ HOLDINGS = [
     {"ticker": "MSFT", "shares": 5, "avgBuyPrice": 310.0, "currency": "USD", "account": "RRSP"},
     {"ticker": "NVDA", "shares": 4, "avgBuyPrice": 420.0, "currency": "USD", "account": "Non-registered"},
 ]
-NO_AUTH_ENV = ("CLERK_", "VERCEL")
+NO_AUTH_ENV = ("CLERK_", "NEXT_PUBLIC_CLERK_", "VERCEL")
 
 
 def clean_env(**extra):
@@ -302,6 +304,16 @@ class ClerkSessionTest(unittest.TestCase):
                 with self.subTest(name):
                     r = self.get_private(headers={"Authorization": f"Bearer {token}"})
                     self.assertEqual(r.status_code, 401)
+
+    def test_issuer_comes_from_the_publishable_key(self):
+        key = "pk_test_" + base64.b64encode(b"clerk.example.test$").decode().rstrip("=")
+        self.assertEqual(clerk_auth.issuer_from_publishable_key(key), self.ISSUER)
+        self.assertIsNone(clerk_auth.issuer_from_publishable_key("sk_test_abc"))
+        self.assertIsNone(clerk_auth.issuer_from_publishable_key("pk_test_!!!"))
+        with clean_env(CLERK_JWT_KEY=self.PUBLIC_PEM, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=key):
+            ok = self.get_private(headers={"Authorization": f"Bearer {self.token()}"})
+            other = self.get_private(headers={"Authorization": f"Bearer {self.token(iss='https://clerk.elsewhere.test')}"})
+        self.assertEqual((ok.status_code, other.status_code), (200, 401))
 
     def test_authorized_parties(self):
         with self.configured(CLERK_AUTHORIZED_PARTIES="https://portfolio.example.test/, http://localhost:3000"):

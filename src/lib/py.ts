@@ -23,7 +23,10 @@ export async function py<T>(path: string, body?: unknown): Promise<T> {
   const h: Record<string, string> = { Accept: "application/json" };
   if (token) h.Authorization = `Bearer ${token}`;
   if (body !== undefined) h["Content-Type"] = "application/json";
-  // Preview deployments sit behind Vercel's protection; this lets the server call itself.
+  // Preview deployments sit behind Vercel's login. Passing on the visitor's cookies (Vercel's _vercel_jwt
+  // among them) lets this server call itself as that visitor; the bypass secret works when it's set up.
+  const cookie = (await headers()).get("cookie");
+  if (cookie) h.Cookie = cookie;
   if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) h["x-vercel-protection-bypass"] = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   let res: Response;
   try {
