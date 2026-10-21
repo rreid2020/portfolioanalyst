@@ -22,7 +22,7 @@ Adapted from [`simple_ai_agents/stock_portfolio_analyst`](https://github.com/Ari
 
 ## 📋 Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - Vercel AI Gateway API key
 - Internet connection (for YFinance + DuckDuckGo)
 
