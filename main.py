@@ -1,4 +1,7 @@
+import math
 import os
+
+import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -7,6 +10,8 @@ from agno.models.openai.like import OpenAILike
 from agno.tools.yfinance import YFinanceTools
 from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.tools.calculator import CalculatorTools
+
+from portfolio_import import COLUMNS, read_holdings, template_csv
 
 load_dotenv()
 
@@ -26,7 +31,13 @@ actionable report. For every portfolio you receive, you should:
    portfolio value using CalculatorTools. Then compute each
    position's weight (%) in the portfolio.
 3. Compute each position's unrealized P/L in absolute dollars and as
-   a percentage versus the user-provided average buy price.
+   a percentage versus the user-provided average buy price. If the
+   average buy price is "unknown", skip P/L for that position.
+   Average buy prices are in the Currency column. When it differs from
+   the currency the ticker trades in (e.g. a US stock with a CAD cost),
+   convert before comparing, report portfolio totals in one currency,
+   and state the FX rate you used. Tickers ending in .TO, .V, .NE or
+   .CN are Canadian listings.
 4. Summarize portfolio-level metrics: total cost basis, total market
    value, total unrealized P/L, and sector/asset concentration.
 5. Call out risk flags: over-concentration in a single ticker or
@@ -71,31 +82,48 @@ def build_agent(model_id: str) -> Agent:
     )
 
 
+def _cell(value):
+    """Data editor cells can be None, NaN or strings; normalize to str/None."""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return None
+    return value
+
+
 def parse_portfolio(rows):
     holdings = []
     for row in rows:
-        ticker = (row.get("Ticker") or "").strip().upper()
+        ticker = str(_cell(row.get("Ticker")) or "").strip().upper()
         if not ticker:
             continue
         try:
-            shares = float(row.get("Shares") or 0)
-            avg_price = float(row.get("Avg Buy Price") or 0)
+            shares = float(_cell(row.get("Shares")) or 0)
+            avg_price = _cell(row.get("Avg Buy Price"))
+            avg_price = float(avg_price) if avg_price is not None else None
         except ValueError:
             continue
         if shares <= 0:
             continue
+        currency = str(_cell(row.get("Currency")) or "").strip().upper()
         holdings.append(
-            {"ticker": ticker, "shares": shares, "avg_price": avg_price}
+            {
+                "ticker": ticker,
+                "shares": shares,
+                "avg_price": avg_price,
+                "currency": currency or "USD",
+            }
         )
     return holdings
 
 
 def format_prompt(holdings, question: str) -> str:
     lines = ["Here is my current stock portfolio:", ""]
-    lines.append("| Ticker | Shares | Avg Buy Price (USD) |")
-    lines.append("|--------|--------|---------------------|")
+    lines.append("| Ticker | Shares | Avg Buy Price | Currency |")
+    lines.append("|--------|--------|---------------|----------|")
     for h in holdings:
-        lines.append(f"| {h['ticker']} | {h['shares']} | {h['avg_price']} |")
+        avg = h["avg_price"] if h["avg_price"] is not None else "unknown"
+        lines.append(
+            f"| {h['ticker']} | {h['shares']} | {avg} | {h['currency']} |"
+        )
     lines.append("")
     lines.append(question.strip() or "Analyze my portfolio end-to-end.")
     return "\n".join(lines)
@@ -133,16 +161,56 @@ def main() -> None:
         )
 
     st.subheader("Your Holdings")
-    default_rows = [
-        {"Ticker": "AAPL", "Shares": 10, "Avg Buy Price": 150.0},
-        {"Ticker": "MSFT", "Shares": 5, "Avg Buy Price": 310.0},
-        {"Ticker": "NVDA", "Shares": 4, "Avg Buy Price": 420.0},
-    ]
+    if "holdings" not in st.session_state:
+        st.session_state.holdings = pd.DataFrame(
+            [
+                {"Ticker": "AAPL", "Shares": 10, "Avg Buy Price": 150.0, "Currency": "USD"},
+                {"Ticker": "MSFT", "Shares": 5, "Avg Buy Price": 310.0, "Currency": "USD"},
+                {"Ticker": "NVDA", "Shares": 4, "Avg Buy Price": 420.0, "Currency": "USD"},
+            ],
+            columns=COLUMNS,
+        )
+        st.session_state.editor_version = 0
+
+    with st.expander("📂 Import from CSV or Excel", expanded=False):
+        st.markdown(
+            "Upload a holdings export from your broker (e.g. Wealthsimple "
+            "**Documents → Holdings report (CSV)**) or your own sheet. Columns "
+            "are detected automatically: a ticker/symbol column, a "
+            "quantity/shares column, and optionally an average cost or book "
+            "value column. Positions held in several accounts are combined."
+        )
+        uploaded = st.file_uploader(
+            "Holdings file", type=["csv", "xlsx", "xlsm"], label_visibility="collapsed"
+        )
+        st.download_button(
+            "Download template CSV",
+            template_csv(),
+            file_name="holdings_template.csv",
+            mime="text/csv",
+        )
+        if uploaded is not None and uploaded.file_id != st.session_state.get("imported_file_id"):
+            st.session_state.imported_file_id = uploaded.file_id
+            try:
+                imported, warnings = read_holdings(uploaded.name, uploaded.getvalue())
+            except Exception as exc:  # malformed files shouldn't crash the app
+                st.session_state.import_message = ("error", f"Couldn't import {uploaded.name}: {exc}")
+            else:
+                st.session_state.holdings = imported
+                # A new key makes the editor drop edits made to the old table.
+                st.session_state.editor_version += 1
+                note = f"Imported {len(imported)} holding(s) from {uploaded.name}."
+                st.session_state.import_message = ("success", " ".join([note, *warnings]))
+        if "import_message" in st.session_state:
+            kind, message = st.session_state.import_message
+            getattr(st, kind)(message)
+
     edited = st.data_editor(
-        default_rows,
+        st.session_state.holdings,
         num_rows="dynamic",
         use_container_width=True,
-        key="portfolio_editor",
+        hide_index=True,
+        key=f"portfolio_editor_{st.session_state.editor_version}",
     )
 
     question = st.text_area(
@@ -155,7 +223,7 @@ def main() -> None:
     )
 
     if st.button("Analyze Portfolio", type="primary"):
-        holdings = parse_portfolio(edited)
+        holdings = parse_portfolio(edited.to_dict("records"))
         if not holdings:
             st.error("Add at least one holding with a ticker and shares > 0.")
             return

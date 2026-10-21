@@ -7,6 +7,7 @@ Adapted from [`simple_ai_agents/stock_portfolio_analyst`](https://github.com/Ari
 ## 🚀 Features
 
 - **Portfolio editor**: spreadsheet-style UI to enter/edit holdings
+- **CSV / Excel import**: upload a broker holdings export (e.g. Wealthsimple's Holdings report) or your own sheet; columns are auto-detected, positions across accounts are merged, and Canadian listings get yfinance suffixes (`SHOP` on TSX → `SHOP.TO`)
 - **Live market data**: prices, fundamentals, analyst ratings, news via YFinance
 - **Web context**: DuckDuckGo search for market news not covered by YFinance
 - **Math that adds up**: a Calculator tool keeps the agent honest on totals, weights, and P/L
