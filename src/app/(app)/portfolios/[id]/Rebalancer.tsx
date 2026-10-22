@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Card, Empty, Notice, Stat } from "@/components/ui";
-import { money, shares } from "@/lib/format";
+import { money, share, shares } from "@/lib/format";
 import type { Holding } from "@/lib/portfolios";
 
 const GROUPINGS = ["Holding", "Sector", "Currency"] as const;
@@ -26,10 +26,10 @@ export type RebalanceOptions = { groupBy: GroupBy; scope: string; cash: number; 
 
 let counter = 0;
 const key = () => `t${++counter}`;
-const pct = (v: number | null | undefined) => (v == null ? "—" : `${v.toFixed(1)}%`);
 
 /** `analystPath` is the Analyst tab's URL; the plan's settings ride along in its `rebalance` parameter. */
 export function Rebalancer({ holdings, base, analystPath }: { holdings: Holding[]; base: string; analystPath: string }) {
+  const balanceNames = new Set(holdings.filter((h) => h.balance != null).map((h) => h.ticker));
   const [groupBy, setGroupBy] = useState<GroupBy>("Holding");
   const [scope, setScope] = useState(ALL_ACCOUNTS);
   const [cash, setCash] = useState("");
@@ -144,7 +144,7 @@ export function Rebalancer({ holdings, base, analystPath }: { holdings: Holding[
                         <span className="font-medium text-slate-800">{t.group}</span>
                       )}
                     </td>
-                    <td className="num">{pct(t.currentPct)}</td>
+                    <td className="num">{share(t.currentPct)}</td>
                     <td className="num">
                       <input className="input w-20 text-right" inputMode="decimal" aria-label={`Target % for ${t.group || "new holding"}`} value={t.target} onChange={(e) => edit(t.key, "target", e.target.value)} />
                     </td>
@@ -171,15 +171,15 @@ export function Rebalancer({ holdings, base, analystPath }: { holdings: Holding[
         <div className="space-y-4">
           {error && <Notice tone="error">{error}</Notice>}
           {result && result.unknown.length > 0 && <Notice tone="warn">No live price for {result.unknown.join(", ")}; left out of the plan.</Notice>}
-          {plan?.targetsScaledFrom != null && <Notice>Targets added up to {plan.targetsScaledFrom.toFixed(1)}%, so they were scaled to 100%.</Notice>}
+          {plan?.targetsScaledFrom != null && <Notice>Targets added up to {share(plan.targetsScaledFrom)}, so they were scaled to 100%.</Notice>}
           {plan && !plan.hasTrades && <Card><Empty>Already on target. Change a target or add new cash to see trades.</Empty></Card>}
           {plan?.hasTrades && (
             <>
               <div className={`grid grid-cols-2 gap-3 ${plan.realizedGain ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}>
-                <Stat label={`Buys (${base})`} value={money(plan.totalBuys, { whole: true })} />
-                <Stat label={`Sells (${base})`} value={money(plan.totalSells, { whole: true })} />
-                <Stat label={`Cash left (${base})`} value={money(plan.cashLeft, { whole: true })} sub="New cash plus sale proceeds not spent" />
-                {plan.realizedGain ? <Stat label={`Est. capital gain (${base})`} value={money(plan.realizedGain, { whole: true })} sub="Non-registered sales; half is taxable" tone="warn" /> : null}
+                <Stat label={`Buys (${base})`} value={money(plan.totalBuys, base, { whole: true })} />
+                <Stat label={`Sells (${base})`} value={money(plan.totalSells, base, { whole: true })} />
+                <Stat label={`Cash left (${base})`} value={money(plan.cashLeft, base, { whole: true })} sub="New cash plus sale proceeds not spent" />
+                {plan.realizedGain ? <Stat label={`Est. capital gain (${base})`} value={money(plan.realizedGain, base, { whole: true })} sub="Non-registered sales; half is taxable" tone="warn" /> : null}
               </div>
               <Card title="Trades" action={<Link href={`${analystPath}&rebalance=${encodeURIComponent(JSON.stringify(options))}`} className="btn btn-secondary btn-sm">Ask the analyst about this plan</Link>}>
                 <div className="overflow-x-auto">
@@ -191,12 +191,13 @@ export function Rebalancer({ holdings, base, analystPath }: { holdings: Holding[
                           <td><span className={`inline-flex rounded px-1.5 py-0.5 text-[0.7rem] font-medium ring-1 ring-inset ${t.action === "Buy" ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-amber-50 text-amber-800 ring-amber-200"}`}>{t.action}</span></td>
                           <td className="font-medium text-slate-800">{t.ticker}</td>
                           <td>{t.account || "—"}</td>
-                          <td className="num">{shares(t.shares)}</td>
-                          <td className="num">{money(t.price)}</td>
+                          {/* A balance (managed account) moves in money, not shares. */}
+                          <td className="num">{balanceNames.has(t.ticker) ? "—" : shares(t.shares)}</td>
+                          <td className="num">{balanceNames.has(t.ticker) ? "—" : money(t.price, t.currency)}</td>
                           <td>{t.currency}</td>
-                          <td className="num">{money(Math.abs(t.amount))}</td>
-                          <td className="num">{pct(t.currentPct)}</td>
-                          <td className="num">{pct(t.afterPct)}</td>
+                          <td className="num">{money(Math.abs(t.amount), base)}</td>
+                          <td className="num">{share(t.currentPct)}</td>
+                          <td className="num">{share(t.afterPct)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -211,10 +212,10 @@ export function Rebalancer({ holdings, base, analystPath }: { holdings: Holding[
                       {plan.groups.map((g) => (
                         <tr key={g.group}>
                           <td className="font-medium text-slate-800">{g.group}</td>
-                          <td className="num">{pct(g.currentPct)}</td>
-                          <td className="num">{pct(g.targetPct)}</td>
-                          <td className="num">{pct(g.afterPct)}</td>
-                          <td className={`num ${g.change < 0 ? "text-red-700" : ""}`}>{money(g.change, { signed: true })}</td>
+                          <td className="num">{share(g.currentPct)}</td>
+                          <td className="num">{share(g.targetPct)}</td>
+                          <td className="num">{share(g.afterPct)}</td>
+                          <td className={`num ${g.change < 0 ? "text-red-700" : ""}`}>{money(g.change, base, { signed: true })}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -217,7 +217,11 @@ def compute_dividends(figures, history: pd.DataFrame, as_of=None) -> Dividends:
     recent = dividends.loc[dividends.index > end - pd.DateOffset(years=1)] if not dividends.empty else dividends
 
     rows = []
+    priced_value = 0.0
     for p in figures.positions.itertuples(index=False):
+        if p.Ticker in figures.balance_tickers:
+            continue  # a balance's dividends are unknown, not zero
+        priced_value += p.Value
         paid = recent[p.Ticker].sum() if p.Ticker in recent else 0.0
         per_share = paid / figures.unit_divisors.get(p.Ticker, 1)
         rows.append({
@@ -235,7 +239,8 @@ def compute_dividends(figures, history: pd.DataFrame, as_of=None) -> Dividends:
         base=base,
         rows=table,
         total_income=total,
-        portfolio_yield=total / figures.total_value * 100 if figures.total_value else None,
+        # Over the holdings whose dividends are known, so balances entered without holdings don't dilute it.
+        portfolio_yield=total / priced_value * 100 if priced_value else None,
     )
 
 

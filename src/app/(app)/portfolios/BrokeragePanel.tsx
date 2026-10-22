@@ -3,6 +3,7 @@
 // the signed-in user (brokerage_store.py), so later visits can refresh without signing in to the broker again.
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { date } from "@/lib/format";
 
 type Status = { configured: boolean; personal?: boolean; connected: boolean; connectedAt?: string | null };
 export type Loaded = { ticker: string; shares: number | null; avgBuyPrice: number | null; currency: string | null; account: string | null };
@@ -101,7 +102,7 @@ export function BrokeragePanel({ brokerage, onLoad }: { brokerage: ReturnType<ty
           </p>
           {status.connected && !status.personal && (
             <p className="mt-1 text-xs text-slate-500">
-              Connected{status.connectedAt ? ` since ${new Date(status.connectedAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}` : ""}.
+              Connected{status.connectedAt ? ` since ${date(status.connectedAt)}` : ""}.
               If you just signed in to your broker, load your holdings below. If loading says nothing is connected yet, finish in the tab SnapTrade opened, or connect again.
             </p>
           )}

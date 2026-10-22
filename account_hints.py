@@ -30,6 +30,12 @@ DISCLAIMER = "General Canadian tax rules, not tax advice. Check contribution roo
 ARTICLES = {"TFSA": "a", "LIRA": "a"}
 
 
+def _money(amount: float, currency: str) -> str:
+    """$1,234 in CAD, US$1,234 in USD: whole dollars, the way the app shows amounts."""
+    prefix = {"CAD": "$", "USD": "US$"}.get(currency)
+    return f"{prefix}{amount:,.0f}" if prefix else f"{amount:,.0f} {currency}"
+
+
 def _a(account: str) -> str:
     return f"{ARTICLES.get(account, 'an')} {account}"
 
@@ -83,7 +89,7 @@ def placement_hints(figures, dividends) -> list:
                     title=f"US dividends in your {account} lose 15% to US withholding tax",
                     detail=(
                         f"{', '.join(tickers)} {'pays' if len(tickers) == 1 else 'pay'} US dividends into your "
-                        f"{account}. The US keeps 15%, about {lost:,.0f} {base} a year here, and {_a(account)} "
+                        f"{account}. The US keeps 15%, about {_money(lost, base)} a year here, and {_a(account)} "
                         "generally can't recover it. US-listed shares held "
                         "in an RRSP or RRIF are generally exempt under the Canada-US tax treaty, and in a "
                         "non-registered account the tax can usually be claimed as a foreign tax credit."

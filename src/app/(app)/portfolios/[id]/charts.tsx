@@ -1,5 +1,6 @@
 // Bar lists and the correlation grid, drawn in plain HTML so they share the tables' type and spacing.
 // Colours come from the chart tokens in globals.css (gain / loss / neutral).
+import { num } from "@/lib/format";
 
 export type Bar = { key: string; label: string; value: number; text: string; detail?: string };
 
@@ -74,9 +75,9 @@ export function CorrelationGrid({ tickers, matrix }: { tickers: string[]; matrix
                     key={tickers[j]}
                     className={`h-9 min-w-12 rounded text-center tabular-nums ${strong ? "text-white" : "text-slate-800"}`}
                     style={{ background: i === j ? "#f8fafc" : mix(NEUTRAL, value >= 0 ? GAIN : LOSS, Math.min(Math.abs(value), 1)) }}
-                    title={`${row} / ${tickers[j]}: ${v == null ? "n/a" : v.toFixed(2)}`}
+                    title={`${row} / ${tickers[j]}: ${num(v, 2)}`}
                   >
-                    {i === j ? "" : v == null ? "—" : v.toFixed(2)}
+                    {i === j ? "" : num(v, 2)}
                   </td>
                 );
               })}

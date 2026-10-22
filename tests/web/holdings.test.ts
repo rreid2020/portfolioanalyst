@@ -26,6 +26,14 @@ describe("checkRows", () => {
     expect(Object.values(errors)[1]).toEqual({ ticker: "Letters, digits, . and - only" });
   });
 
+  it("puts saved numbers back into the boxes formatted", () => {
+    const row = toRow({ ticker: "SHOP.TO", shares: 1200.5, avgBuyPrice: 95.5, currency: "CAD", account: null });
+    expect([row.shares, row.avgBuyPrice]).toEqual(["1,200.5", "95.50"]);
+    expect(checkRows([row]).holdings[0]).toMatchObject({ shares: 1200.5, avgBuyPrice: 95.5 });
+    const balance = toBalanceRow({ ticker: "Managed", balance: 25000, avgBuyPrice: 20000.125, currency: "CAD", account: null });
+    expect([balance.balance, balance.invested]).toEqual(["25,000.00", "20,000.125"]);
+  });
+
   it("round-trips saved holdings", () => {
     const h = { ticker: "XEQT.TO", shares: 12.5, avgBuyPrice: null, currency: null, account: "RRSP" };
     expect(checkRows([toRow(h)]).holdings).toEqual([h]);

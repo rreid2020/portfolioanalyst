@@ -8,7 +8,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AiBadge, Card } from "@/components/ui";
 import { DEFAULT_QUESTION, MODELS, toolLabel } from "@/lib/analyst-shared";
-import { filename, stamp, toHtml, toMarkdown, type ChatTurn } from "@/lib/report";
+import { dateTime, money } from "@/lib/format";
+import { filename, toHtml, toMarkdown, type ChatTurn } from "@/lib/report";
 import Link from "next/link";
 import type { RebalanceOptions } from "./Rebalancer";
 
@@ -128,7 +129,7 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
   }
 
   const [focus, first, ...rest] = messages;
-  const reportMeta = { created: stamp(run.createdAt ?? new Date().toISOString()), model, base: run.base };
+  const reportMeta = { created: run.createdAt ?? new Date().toISOString(), model, base: run.base };
   const chat: ChatTurn[] = rest.map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: textOf(m) }));
   const report = first ? textOf(first) : "";
 
@@ -147,7 +148,7 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
           </label>
           {rebalance && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-brand-50 px-3 py-2 text-sm text-brand-700 ring-1 ring-inset ring-brand-100">
-              <span>Includes your rebalance plan ({rebalance.groupBy.toLowerCase()} targets, {rebalance.scope.toLowerCase()}{rebalance.cash ? `, ${rebalance.cash.toLocaleString("en-CA")} ${base} new cash` : ""}).</span>
+              <span>Includes your rebalance plan ({rebalance.groupBy.toLowerCase()} targets, {rebalance.scope.toLowerCase()}{rebalance.cash ? `, ${money(rebalance.cash, base)} new cash` : ""}).</span>
               <Link href={withoutRebalance} className="text-xs font-medium underline">Leave it out</Link>
             </div>
           )}
@@ -183,7 +184,7 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
       >
         <div className="px-4 py-4">
           <p className="mb-3 text-xs text-slate-500">
-            {reportMeta.created} · {modelLabel(model)} · figures in {run.base}
+            {dateTime(reportMeta.created)} · {modelLabel(model)} · figures in {run.base}
             {focus && textOf(focus) !== DEFAULT_QUESTION && <> · Focus: {textOf(focus)}</>}
           </p>
           <AiNotice model={modelLabel(model)} />

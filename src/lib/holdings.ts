@@ -6,6 +6,10 @@ export type Row = { key: string; ticker: string; shares: string; avgBuyPrice: st
 export const FIELDS = ["ticker", "shares", "avgBuyPrice", "currency", "account"] as const;
 export type Field = (typeof FIELDS)[number];
 
+// Saved numbers go back into the boxes formatted (12,500.00); typing them with or without commas or $ works.
+const amountText = new Intl.NumberFormat("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+const sharesText = new Intl.NumberFormat("en-CA", { maximumFractionDigits: 6 });
+
 let counter = 0;
 export function newKey() {
   counter += 1;
@@ -20,8 +24,8 @@ export function toRow(h: { ticker: string; shares: number | null; avgBuyPrice: n
   return {
     key: newKey(),
     ticker: h.ticker ?? "",
-    shares: h.shares == null ? "" : String(h.shares),
-    avgBuyPrice: h.avgBuyPrice == null ? "" : String(h.avgBuyPrice),
+    shares: h.shares == null ? "" : sharesText.format(h.shares),
+    avgBuyPrice: h.avgBuyPrice == null ? "" : amountText.format(h.avgBuyPrice),
     currency: h.currency ?? "",
     account: h.account ?? "",
   };
@@ -93,8 +97,8 @@ export function toBalanceRow(h: { ticker: string; balance?: number | null; avgBu
   return {
     key: newKey(),
     name: h.ticker,
-    balance: h.balance == null ? "" : String(h.balance),
-    invested: h.avgBuyPrice == null ? "" : String(h.avgBuyPrice),
+    balance: h.balance == null ? "" : amountText.format(h.balance),
+    invested: h.avgBuyPrice == null ? "" : amountText.format(h.avgBuyPrice),
     currency: h.currency ?? "CAD",
     account: h.account ?? "",
   };

@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { AiBadge, Card, Empty, Notice, PageHeader, Stat } from "@/components/ui";
 import type { Holding } from "@/lib/portfolios";
 import { py, pyMeta, PyError, type Analytics, type Base, type Figures, type Meta } from "@/lib/py";
-import { date, money, pct } from "@/lib/format";
+import { date, money, num, pct } from "@/lib/format";
 import { ALL } from "@/lib/selection";
 import {
   AccountsView, AllocationView, ALLOCATION_VIEWS, AnalyticsSkeleton, DividendsView, GainLossView, PerformanceView, PositionsView,
@@ -59,7 +59,7 @@ async function AnalyticsTab({ tab, holdings, figures, meta, period, benchmark, h
   const { data: analytics, error } = await attempt(() => py<Analytics>("/analytics", { holdings, base: figures.base, benchmark, period }));
   if (!analytics) return <Notice tone="error">Couldn&rsquo;t load price history: {error}</Notice>;
   if (tab === "accounts") return <AccountsView figures={figures} analytics={analytics} disclaimer={meta.disclaimer} editHref={editHref} />;
-  if (tab === "dividends") return <DividendsView analytics={analytics} base={figures.base} />;
+  if (tab === "dividends") return <DividendsView analytics={analytics} base={figures.base} balances={figures.balances} />;
   return <PerformanceView analytics={analytics} meta={meta} figures={figures} period={period} benchmark={benchmark} href={href} />;
 }
 
@@ -141,7 +141,7 @@ async function DashboardBody({ portfolio, search, analysis, base, tab, view, edi
   const benchmark = meta.benchmarks.some((b) => b.symbol === search.benchmark) ? search.benchmark! : meta.defaultBenchmark;
   const t = figures.totals;
   const fxNote = Object.keys(figures.fx).length
-    ? ` Totals in ${base} at ${Object.entries(figures.fx).sort().map(([c, r]) => `1 ${c} = ${r.toFixed(4)} ${base}`).join(", ")}.`
+    ? ` Totals in ${base} at ${Object.entries(figures.fx).sort().map(([c, r]) => `1 ${c} = ${num(r, 4)} ${base}`).join(", ")}.`
     : "";
 
   return (
@@ -150,10 +150,10 @@ async function DashboardBody({ portfolio, search, analysis, base, tab, view, edi
         <div className="mb-4"><Notice tone="warn">No live price for {figures.unpriced.join(", ")}; left out of the totals. Check the ticker symbols.</Notice></div>
       )}
       <div className="mb-2 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label={`Market value (${base})`} value={money(t.value, { whole: true })} />
-        <Stat label={`Cost basis (${base})`} value={money(t.cost, { whole: true })} sub="Positions with a known average buy price" />
-        <Stat label={`Unrealized P/L (${base})`} value={money(t.pl, { signed: true, whole: true })} sub={pct(t.plPct)} tone={t.pl == null ? undefined : t.pl >= 0 ? "good" : "bad"} />
-        <Stat label={`Today (${base})`} value={money(t.dayChange, { signed: true, whole: true })} sub={`${pct(t.dayChangePct, 2)} since the previous close`} tone={t.dayChange == null ? undefined : t.dayChange >= 0 ? "good" : "bad"} />
+        <Stat label={`Market value (${base})`} value={money(t.value, base, { whole: true })} />
+        <Stat label={`Cost basis (${base})`} value={money(t.cost, base, { whole: true })} sub="Positions with a known average buy price" />
+        <Stat label={`Unrealized P/L (${base})`} value={money(t.pl, base, { signed: true, whole: true })} sub={pct(t.plPct)} tone={t.pl == null ? undefined : t.pl >= 0 ? "good" : "bad"} />
+        <Stat label={`Today (${base})`} value={money(t.dayChange, base, { signed: true, whole: true })} sub={`${pct(t.dayChangePct, 2)} since the previous close`} tone={t.dayChange == null ? undefined : t.dayChange >= 0 ? "good" : "bad"} />
       </div>
       <p className="mb-4 text-xs text-slate-500">Live Yahoo Finance quotes, which can be delayed up to 15 minutes.{fxNote}</p>
 

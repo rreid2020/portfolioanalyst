@@ -138,6 +138,10 @@ class BalanceHoldingTest(ApiTestCase):
         self.assertNotIn("Wealthsimple Managed", body["performance"]["excluded"])
         accounts = {a["account"]: a["value"] for a in body["accountSummary"]}
         self.assertEqual(accounts["Non-registered"], 10000)
+        # Its dividends are unknown, so it's not a zero row and doesn't dilute the yield.
+        self.assertNotIn("Wealthsimple Managed", [r["ticker"] for r in body["dividends"]["rows"]])
+        alone = self.client.post("/api/py/analytics", json={"holdings": [HOLDINGS[0]]}).json()
+        self.assertAlmostEqual(body["dividends"]["portfolioYield"], alone["dividends"]["portfolioYield"])
 
     def test_rebalances_in_currency_units(self):
         r = self.client.post("/api/py/rebalance", json={"holdings": [HOLDINGS[0], MANAGED], "targets": {"AAPL": 50, "Wealthsimple Managed": 50}, "fractional": False})
