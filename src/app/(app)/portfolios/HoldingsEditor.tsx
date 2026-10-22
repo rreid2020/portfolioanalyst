@@ -5,11 +5,13 @@ import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { saveNewAction, updateAction } from "@/app/portfolio-actions";
 import { ACCOUNT_TYPES } from "@/lib/accounts";
-import { checkRows, emptyRow, pastedRows, toRow, type Field, type Row } from "@/lib/holdings";
+import {
+  checkBalances, checkRows, emptyBalance, emptyRow, pastedRows, toBalanceRow, toRow, type BalanceField, type BalanceRow, type Field, type Row,
+} from "@/lib/holdings";
 import { MAX_NAME } from "@/lib/limits";
 import { BrokeragePanel, useBrokerage, type Loaded } from "./BrokeragePanel";
 
-type Saved = { ticker: string; shares: number | null; avgBuyPrice: number | null; currency: string | null; account: string | null };
+type Saved = { ticker: string; shares: number | null; avgBuyPrice: number | null; currency: string | null; account: string | null; balance?: number | null };
 type Props = { portfolio?: { id: number; name: string; holdings: Saved[] } };
 
 const COLUMNS: { field: Field; label: string; hint?: string; className: string; numeric?: boolean }[] = [
@@ -20,9 +22,32 @@ const COLUMNS: { field: Field; label: string; hint?: string; className: string; 
   { field: "account", label: "Account", hint: "Optional: used for per-account totals and placement hints", className: "min-w-40" },
 ];
 
+const BALANCE_COLUMNS: { field: BalanceField; label: string; hint?: string; className: string; numeric?: boolean }[] = [
+  { field: "name", label: "Name", hint: "e.g. Wealthsimple Managed, workplace pension, GIC", className: "min-w-48" },
+  { field: "balance", label: "Current balance", className: "min-w-28", numeric: true },
+  { field: "invested", label: "Amount invested", hint: "Optional: what you've put in, for gain / loss", className: "min-w-28", numeric: true },
+  { field: "currency", label: "Currency", className: "min-w-20" },
+  { field: "account", label: "Account", className: "min-w-40" },
+];
+
+function AccountSelect({ value, label, onChange }: { value: string; label: string; onChange: (v: string) => void }) {
+  return (
+    <select className="input w-full" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">—</option>
+      {ACCOUNT_TYPES.map((a) => <option key={a}>{a}</option>)}
+      {value && !(ACCOUNT_TYPES as readonly string[]).includes(value) && <option>{value}</option>}
+    </select>
+  );
+}
+
 export function HoldingsEditor({ portfolio }: Props) {
   const [name, setName] = useState(portfolio?.name ?? "");
-  const [rows, setRows] = useState<Row[]>(() => (portfolio?.holdings.length ? portfolio.holdings.map(toRow) : [emptyRow(), emptyRow(), emptyRow()]));
+  const [rows, setRows] = useState<Row[]>(() => {
+    const securities = portfolio?.holdings.filter((h) => h.balance == null) ?? [];
+    return securities.length ? securities.map(toRow) : portfolio?.holdings.length ? [emptyRow()] : [emptyRow(), emptyRow(), emptyRow()];
+  });
+  // Managed accounts and other holdings known only by their balance.
+  const [balances, setBalances] = useState<BalanceRow[]>(() => (portfolio?.holdings ?? []).filter((h) => h.balance != null).map(toBalanceRow));
   const [showErrors, setShowErrors] = useState(false);
   const [message, setMessage] = useState<{ tone: "error" | "info"; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
@@ -31,7 +56,8 @@ export function HoldingsEditor({ portfolio }: Props) {
   const brokerage = useBrokerage();
 
   const checked = checkRows(rows);
-  const errorCount = Object.keys(checked.errors).length;
+  const checkedBalances = checkBalances(balances);
+  const errorCount = Object.keys(checked.errors).length + Object.keys(checkedBalances.errors).length;
 
   function edit(key: string, field: Field, value: string) {
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
@@ -93,13 +119,14 @@ export function HoldingsEditor({ portfolio }: Props) {
   function save() {
     setShowErrors(true);
     if (errorCount) return setMessage({ tone: "error", text: `Fix the ${errorCount} highlighted row${errorCount === 1 ? "" : "s"} first.` });
-    if (!checked.holdings.length) return setMessage({ tone: "error", text: "Add at least one holding with a ticker and shares." });
+    const all = [...checked.holdings, ...checkedBalances.holdings];
+    if (!all.length) return setMessage({ tone: "error", text: "Add at least one holding with a ticker and shares, or a balance." });
     if (!name.trim()) return setMessage({ tone: "error", text: "Give the portfolio a name." });
     setMessage(null);
     startSaving(async () => {
       const result = portfolio
-        ? await updateAction(portfolio.id, name, checked.holdings)
-        : await saveNewAction(name, checked.holdings);
+        ? await updateAction(portfolio.id, name, all)
+        : await saveNewAction(name, all);
       if (result?.error) setMessage({ tone: "error", text: result.error });
     });
   }
@@ -171,11 +198,7 @@ export function HoldingsEditor({ portfolio }: Props) {
                     return (
                       <td key={c.field} className="align-top">
                         {c.field === "account" ? (
-                          <select className="input w-full" aria-label={label} value={r.account} onChange={(e) => edit(r.key, "account", e.target.value)}>
-                            <option value="">—</option>
-                            {ACCOUNT_TYPES.map((a) => <option key={a}>{a}</option>)}
-                            {r.account && !(ACCOUNT_TYPES as readonly string[]).includes(r.account) && <option>{r.account}</option>}
-                          </select>
+                          <AccountSelect value={r.account} label={label} onChange={(v) => edit(r.key, "account", v)} />
                         ) : (
                           <input
                             className={`input w-full ${c.numeric ? "text-right" : ""} ${c.field === "ticker" || c.field === "currency" ? "uppercase" : ""} ${err ? "!border-red-400 bg-red-50" : ""}`}
@@ -203,6 +226,68 @@ export function HoldingsEditor({ portfolio }: Props) {
         <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2">
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setRows((rs) => [...rs, emptyRow()])}>+ Add row</button>
           <span className="text-xs text-slate-500">{checked.holdings.length} holding{checked.holdings.length === 1 ? "" : "s"}{errorCount ? `, ${errorCount} to fix` : ""}</span>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <header className="border-b border-slate-100 px-4 py-3">
+          <h2 className="text-sm font-semibold text-slate-800">Managed accounts and other balances</h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            For money you can&rsquo;t list holding by holding, like a managed (robo-advisor) portfolio, a pension or a GIC: enter its current balance.
+            It counts in your totals, allocation by account and currency, and rebalancing. With no holdings to price, it&rsquo;s left out of the performance backtest and dividends.
+          </p>
+        </header>
+        {balances.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="grid-table">
+              <thead>
+                <tr>
+                  {BALANCE_COLUMNS.map((c) => <th key={c.field} className={`${c.className} ${c.numeric ? "num" : ""}`} title={c.hint}>{c.label}</th>)}
+                  <th className="w-0"><span className="sr-only">Remove</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {balances.map((b, i) => {
+                  const errs = showErrors ? checkedBalances.errors[b.key] : undefined;
+                  const set = (field: BalanceField, value: string) => setBalances((bs) => bs.map((x) => (x.key === b.key ? { ...x, [field]: value } : x)));
+                  return (
+                    <tr key={b.key}>
+                      {BALANCE_COLUMNS.map((c) => {
+                        const err = errs?.[c.field];
+                        const label = `${c.label}, balance ${i + 1}`;
+                        return (
+                          <td key={c.field} className="align-top">
+                            {c.field === "account" ? (
+                              <AccountSelect value={b.account} label={label} onChange={(v) => set("account", v)} />
+                            ) : (
+                              <input
+                                className={`input w-full ${c.numeric ? "text-right" : ""} ${c.field === "currency" ? "uppercase" : ""} ${err ? "!border-red-400 bg-red-50" : ""}`}
+                                aria-label={label}
+                                aria-invalid={Boolean(err)}
+                                inputMode={c.numeric ? "decimal" : undefined}
+                                placeholder={c.field === "name" ? "e.g. Wealthsimple Managed" : c.field === "invested" ? "optional" : undefined}
+                                value={b[c.field]}
+                                maxLength={c.field === "currency" ? 3 : c.field === "name" ? 60 : 20}
+                                onChange={(e) => set(c.field, e.target.value)}
+                              />
+                            )}
+                            {err && <div className="mt-0.5 text-[0.7rem] text-red-700">{err}</div>}
+                          </td>
+                        );
+                      })}
+                      <td className="align-top">
+                        <button type="button" className="btn btn-secondary btn-sm" aria-label={`Remove balance ${i + 1}`} onClick={() => setBalances((bs) => bs.filter((x) => x.key !== b.key))}>✕</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className={`flex items-center justify-between px-3 py-2 ${balances.length ? "border-t border-slate-100" : ""}`}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setBalances((bs) => [...bs, emptyBalance()])}>+ Add a balance</button>
+          {checkedBalances.count > 0 && <span className="text-xs text-slate-500">{checkedBalances.holdings.length} balance{checkedBalances.holdings.length === 1 ? "" : "s"}</span>}
         </div>
       </section>
 

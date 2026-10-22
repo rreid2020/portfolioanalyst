@@ -83,9 +83,9 @@ export function PositionsView({ figures }: { figures: Figures }) {
               <tr key={`${p.ticker}|${p.account}`}>
                 <td className="font-medium text-slate-800">{p.ticker}</td>
                 <td>{p.account}</td>
-                <td className="max-w-56 truncate text-slate-600" title={p.name}>{p.name}</td>
-                <td className="num">{shares(p.shares)}</td>
-                <td className="num">{money(p.price)}</td>
+                <td className="max-w-56 truncate text-slate-600" title={p.name}>{p.balanceOnly ? "Balance only (holdings unknown)" : p.name}</td>
+                <td className="num">{p.balanceOnly ? "—" : shares(p.shares)}</td>
+                <td className="num">{p.balanceOnly ? "—" : money(p.price)}</td>
                 <td>{p.currency}</td>
                 <td className="num">{money(p.value)}</td>
                 <td className="num">{money(p.cost)}</td>
@@ -245,6 +245,7 @@ export function PerformanceView({ analytics, meta, figures, period, benchmark, h
   const late = Object.entries(p.lateStarts);
   if (late.length) note += ` Starts later than the period because ${late.map(([t, d]) => `${t} has prices only from ${monthYear(d)}`).join(", ")}.`;
   if (p.excluded.length) note += ` No price history for ${p.excluded.join(", ")}.`;
+  if (figures.balances.length) note += ` Balances entered without holdings (${figures.balances.join(", ")}) aren't in the backtest.`;
   return (
     <div className="space-y-4">
       {controls}

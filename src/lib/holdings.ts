@@ -78,3 +78,50 @@ export function pastedRows(text: string, from: Field): Partial<Record<Field, str
       return row;
     });
 }
+
+// ---- Balance-only holdings: managed accounts, pensions, GICs... known only by their value ----
+
+export type BalanceRow = { key: string; name: string; balance: string; invested: string; currency: string; account: string };
+export const BALANCE_FIELDS = ["name", "balance", "invested", "currency", "account"] as const;
+export type BalanceField = (typeof BALANCE_FIELDS)[number];
+
+export function emptyBalance(): BalanceRow {
+  return { key: newKey(), name: "", balance: "", invested: "", currency: "CAD", account: "" };
+}
+
+export function toBalanceRow(h: { ticker: string; balance?: number | null; avgBuyPrice: number | null; currency: string | null; account: string | null }): BalanceRow {
+  return {
+    key: newKey(),
+    name: h.ticker,
+    balance: h.balance == null ? "" : String(h.balance),
+    invested: h.avgBuyPrice == null ? "" : String(h.avgBuyPrice),
+    currency: h.currency ?? "CAD",
+    account: h.account ?? "",
+  };
+}
+
+export type CheckedBalances = { holdings: Holding[]; errors: Record<string, Partial<Record<BalanceField, string>>>; count: number };
+
+/** Blank rows are skipped; every other row needs a name and a balance above 0. */
+export function checkBalances(rows: BalanceRow[]): CheckedBalances {
+  const holdings: Holding[] = [];
+  const errors: CheckedBalances["errors"] = {};
+  for (const r of rows) {
+    if (!r.name.trim() && !r.balance.trim() && !r.invested.trim()) continue;
+    const e: Partial<Record<BalanceField, string>> = {};
+    const name = r.name.trim();
+    if (!name) e.name = "Give it a name";
+    const balance = number(r.balance);
+    if (balance == null || balance === undefined || balance <= 0) e.balance = "More than 0";
+    const invested = number(r.invested);
+    if (invested === undefined || (invested != null && invested < 0)) e.invested = "An amount, or blank";
+    const currency = r.currency.trim().toUpperCase() || "CAD";
+    if (!/^[A-Z]{3}$/.test(currency)) e.currency = "3 letters, e.g. CAD";
+    if (Object.keys(e).length) {
+      errors[r.key] = e;
+      continue;
+    }
+    holdings.push({ ticker: name, shares: 0, balance: balance!, avgBuyPrice: invested ?? null, currency, account: r.account.trim() || null });
+  }
+  return { holdings, errors, count: holdings.length + Object.keys(errors).length };
+}

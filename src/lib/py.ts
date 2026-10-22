@@ -69,6 +69,7 @@ export type Position = {
   ticker: string; account: string; name: string; shares: number; price: number; currency: string;
   value: number; cost: number | null; pl: number | null; plPct: number | null; dayChange: number | null;
   weightPct: number; sector: string; country: string;
+  balanceOnly: boolean; // a managed account or other balance: shares are its balance, price 1
 };
 
 export type Figures = {
@@ -80,6 +81,7 @@ export type Figures = {
   byTicker: Position[];
   allocation: Record<string, { group: string; value: number; weightPct: number }[]>;
   accounts: string[];
+  balances: string[]; // names of balance-only holdings
 };
 
 export type Hint = { account: string; title: string; detail: string; tickers: string[]; amount: number | null };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkRows, emptyRow, pastedRows, toRow, type Row } from "@/lib/holdings";
+import { checkBalances, checkRows, emptyBalance, emptyRow, pastedRows, toBalanceRow, toRow, type BalanceRow, type Row } from "@/lib/holdings";
 
 const row = (fields: Partial<Row>): Row => ({ ...emptyRow(), ...fields });
 
@@ -41,5 +41,32 @@ describe("pastedRows", () => {
     expect(pastedRows("10\t150\textra\tignored\tgone", "shares")).toEqual([
       { shares: "10", avgBuyPrice: "150", currency: "extra", account: "ignored" },
     ]);
+  });
+});
+
+describe("checkBalances", () => {
+  const balance = (fields: Partial<BalanceRow>): BalanceRow => ({ ...emptyBalance(), ...fields });
+
+  it("turns managed accounts into balance-only holdings", () => {
+    const { holdings, errors } = checkBalances([
+      balance({ name: " Wealthsimple Managed ", balance: "25,400.50", invested: "$20,000", account: "Non-registered" }),
+      balance({}), // blank: skipped
+      balance({ name: "US pension", balance: "1000", currency: "usd" }),
+    ]);
+    expect(errors).toEqual({});
+    expect(holdings).toEqual([
+      { ticker: "Wealthsimple Managed", shares: 0, balance: 25400.5, avgBuyPrice: 20000, currency: "CAD", account: "Non-registered" },
+      { ticker: "US pension", shares: 0, balance: 1000, avgBuyPrice: null, currency: "USD", account: null },
+    ]);
+  });
+
+  it("explains what's missing", () => {
+    const bad = balance({ name: "", balance: "0", invested: "lots", currency: "dollars" });
+    expect(checkBalances([bad]).errors[bad.key]).toEqual({ name: "Give it a name", balance: "More than 0", invested: "An amount, or blank", currency: "3 letters, e.g. CAD" });
+  });
+
+  it("round-trips a saved balance", () => {
+    const saved = { ticker: "GIC", shares: 0, balance: 5000, avgBuyPrice: 5000, currency: "CAD", account: "TFSA" };
+    expect(checkBalances([toBalanceRow(saved)]).holdings).toEqual([saved]);
   });
 });

@@ -7,12 +7,17 @@ import { MAX_NAME } from "@/lib/limits";
 
 const { users, portfolios, holdings } = schema;
 
+/**
+ * A position. With `balance` set it's a balance-only holding (a managed account, pension, GIC...):
+ * `ticker` is its name, `balance` its value in `currency`, `avgBuyPrice` the total amount put in.
+ */
 export type Holding = {
   ticker: string;
   shares: number;
   avgBuyPrice: number | null;
   currency: string | null;
   account: string | null;
+  balance?: number | null;
 };
 
 export type PortfolioSummary = { id: number; name: string; updatedAt: string; holdings: number };
@@ -63,19 +68,22 @@ async function owned(userId: string, id: number) {
   return row ?? null;
 }
 
-function clean(rows: Holding[]) {
-  return rows.flatMap((h, i) => {
+type Cleaned = { position: number; ticker: string; shares: number; avgPrice: number | null; currency: string | null; account: string | null; balance: number | null };
+
+function clean(rows: Holding[]): Cleaned[] {
+  return rows.flatMap((h, i): Cleaned[] => {
+    const avg = h.avgBuyPrice != null && Number.isFinite(h.avgBuyPrice) ? h.avgBuyPrice : null;
+    const currency = (h.currency ?? "").trim().toUpperCase() || null;
+    const account = (h.account ?? "").trim() || null;
+    if (h.balance != null) {
+      // A balance-only holding keeps its name as typed; its currency defaults to CAD.
+      const name = (h.ticker ?? "").trim();
+      if (!name || !Number.isFinite(h.balance)) return [];
+      return [{ position: i, ticker: name, shares: 0, avgPrice: avg, currency: currency ?? "CAD", account, balance: h.balance }];
+    }
     const ticker = (h.ticker ?? "").trim().toUpperCase();
     if (!ticker || h.shares == null || !Number.isFinite(h.shares)) return [];
-    const avg = h.avgBuyPrice != null && Number.isFinite(h.avgBuyPrice) ? h.avgBuyPrice : null;
-    return [{
-      position: i,
-      ticker,
-      shares: h.shares,
-      avgPrice: avg,
-      currency: (h.currency ?? "").trim().toUpperCase() || null,
-      account: (h.account ?? "").trim() || null,
-    }];
+    return [{ position: i, ticker, shares: h.shares, avgPrice: avg, currency, account, balance: null }];
   });
 }
 
@@ -139,7 +147,7 @@ export async function loadPortfolio(userId: string, id: number) {
   const portfolio = await owned(userId, id);
   if (!portfolio) return null;
   const rows = await db
-    .select({ ticker: holdings.ticker, shares: holdings.shares, avgBuyPrice: holdings.avgPrice, currency: holdings.currency, account: holdings.account })
+    .select({ ticker: holdings.ticker, shares: holdings.shares, avgBuyPrice: holdings.avgPrice, currency: holdings.currency, account: holdings.account, balance: holdings.balance })
     .from(holdings)
     .where(eq(holdings.portfolioId, id))
     .orderBy(asc(holdings.position));
@@ -153,6 +161,7 @@ export async function loadAllPortfolios(userId: string) {
     .select({
       portfolioId: portfolios.id, updatedAt: portfolios.updatedAt,
       ticker: holdings.ticker, shares: holdings.shares, avgBuyPrice: holdings.avgPrice, currency: holdings.currency, account: holdings.account,
+      balance: holdings.balance,
     })
     .from(portfolios)
     .innerJoin(holdings, eq(holdings.portfolioId, portfolios.id))
@@ -161,7 +170,7 @@ export async function loadAllPortfolios(userId: string) {
   return {
     portfolios: new Set(rows.map((r) => r.portfolioId)).size,
     updatedAt: rows[0]?.updatedAt ?? null,
-    holdings: rows.map(({ ticker, shares, avgBuyPrice, currency, account }) => ({ ticker, shares, avgBuyPrice, currency, account })) as Holding[],
+    holdings: rows.map(({ ticker, shares, avgBuyPrice, currency, account, balance }) => ({ ticker, shares, avgBuyPrice, currency, account, balance })) as Holding[],
   };
 }
 

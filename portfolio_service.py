@@ -72,9 +72,35 @@ def _cell(value):
     return value
 
 
+def _balance_row(row):
+    """A balance-only holding (managed account, pension...) from a row with a Balance, or None to skip it."""
+    name = str(_cell(row.get("Ticker")) or "").strip()
+    try:
+        balance = float(_cell(row.get("Balance")))
+        invested = _cell(row.get("Avg Buy Price"))
+        invested = float(invested) if invested is not None else None
+    except (TypeError, ValueError):
+        return None
+    if not name or balance <= 0:
+        return None
+    return {
+        "ticker": name,
+        "shares": balance,
+        "balance": balance,
+        "avg_price": invested,  # the total amount put in, for P/L
+        "currency": str(_cell(row.get("Currency")) or "").strip().upper() or "CAD",
+        "account": normalize_account(_cell(row.get("Account"))) or None,
+    }
+
+
 def parse_portfolio(rows):
     holdings = []
     for row in rows:
+        if _cell(row.get("Balance")) is not None:
+            balance = _balance_row(row)
+            if balance:
+                holdings.append(balance)
+            continue
         ticker = str(_cell(row.get("Ticker")) or "").strip().upper()
         if not ticker:
             continue
@@ -104,14 +130,15 @@ def load_figures(holdings, base: str, quotes_fn=quotes, fx_fn=fx_rates):
     """Figures for the holdings, or None without holdings."""
     if not holdings:
         return None
-    found = quotes_fn(tuple(sorted({h["ticker"] for h in holdings})))
+    found = quotes_fn(tuple(sorted({h["ticker"] for h in holdings if h.get("balance") is None})))
     currencies = portfolio_metrics.needed_currencies(holdings, found) | {base}
     fx = fx_fn(tuple(sorted(currencies)), base)
     return portfolio_metrics.compute(holdings, found, fx, base)
 
 
 def load_history(figures, history_fn=history):
-    return history_fn(tuple(portfolio_analytics.history_symbols(figures.positions, figures.base)))
+    priced = figures.positions[~figures.positions["Ticker"].isin(figures.balance_tickers)]
+    return history_fn(tuple(portfolio_analytics.history_symbols(priced, figures.base)))
 
 
 def rebalance_rows(figures, group_by: str, scope: str) -> pd.DataFrame:
@@ -164,6 +191,10 @@ def format_prompt(
     lines.append("| Ticker | Shares | Avg Buy Price | Currency | Account |")
     lines.append("|--------|--------|---------------|----------|---------|")
     for h in holdings:
+        if h.get("balance") is not None:
+            invested = f"{h['avg_price']:,.2f} invested" if h["avg_price"] is not None else "amount invested unknown"
+            lines.append(f"| {h['ticker']} (managed account, holdings unknown) | balance {h['balance']:,.2f} | {invested} | {h['currency']} | {h.get('account') or 'unspecified'} |")
+            continue
         avg = h["avg_price"] if h["avg_price"] is not None else "unknown"
         currency = h["currency"] or "same as listing"
         account = h.get("account") or "unspecified"

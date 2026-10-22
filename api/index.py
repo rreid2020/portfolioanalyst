@@ -89,8 +89,11 @@ def day(value) -> str | None:
 
 
 class Holding(BaseModel):
-    ticker: str
+    ticker: str  # the name, for a balance-only holding
     shares: float | None = None
+    # Set for a balance-only holding (managed account, pension...): its value in `currency`;
+    # avgBuyPrice is then the total amount put in.
+    balance: float | None = None
     avgBuyPrice: float | None = None
     currency: str | None = None
     account: str | None = None
@@ -127,7 +130,7 @@ class PromptIn(AnalyticsIn):
 
 def parse(holdings: list[Holding]) -> list:
     rows = [
-        {"Ticker": h.ticker, "Shares": h.shares, "Avg Buy Price": h.avgBuyPrice, "Currency": h.currency, "Account": h.account}
+        {"Ticker": h.ticker, "Shares": h.shares, "Avg Buy Price": h.avgBuyPrice, "Currency": h.currency, "Account": h.account, "Balance": h.balance}
         for h in holdings
     ]
     return portfolio_service.parse_portfolio(rows)
@@ -144,6 +147,13 @@ def accounts_of(figures) -> list:
     return [a for a in dict.fromkeys(figures.positions["Account"]) if a != portfolio_metrics.UNSPECIFIED_ACCOUNT]
 
 
+def flag_balances(rows: list, figures) -> list:
+    """Mark balance-only holdings, whose shares and price are just their balance and 1."""
+    for row in rows:
+        row["balanceOnly"] = row["ticker"] in figures.balance_tickers
+    return rows
+
+
 def figures_json(figures) -> dict:
     return {
         "base": figures.base,
@@ -157,13 +167,14 @@ def figures_json(figures) -> dict:
         },
         "fx": figures.fx,
         "unpriced": figures.unpriced,
-        "positions": records(figures.positions),
-        "byTicker": records(figures.by_ticker()) if not figures.positions.empty else [],
+        "positions": flag_balances(records(figures.positions), figures),
+        "byTicker": flag_balances(records(figures.by_ticker()), figures) if not figures.positions.empty else [],
         "allocation": {
             view: records(figures.allocation(column)) if not figures.positions.empty else []
             for view, column in ALLOCATION_VIEWS.items()
         },
         "accounts": accounts_of(figures),
+        "balances": figures.balance_tickers,
     }
 
 
@@ -232,8 +243,12 @@ def plan_for(figures, options):
         targets = exact.to_dict()
     else:
         targets = {}
+        # Tickers are typed in any case; a held group (a ticker, or a balance's name) keeps its own spelling.
+        held = {str(g).upper(): g for g in rows["Group"]}
         for group, target in options.targets.items():
-            group = group.strip().upper() if options.groupBy == "Holding" else group.strip()
+            group = group.strip()
+            if options.groupBy == "Holding":
+                group = held.get(group.upper(), group.upper())
             if group:
                 targets[group] = 0.0 if target is None else float(target)
     targets = portfolio_service.resolve_targets(targets, exact)

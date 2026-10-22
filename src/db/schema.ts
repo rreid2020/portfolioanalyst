@@ -33,6 +33,9 @@ export const holdings = pgTable(
     avgPrice: doublePrecision("avg_price"),
     currency: text("currency"),
     account: text("account"),
+    // Set for a balance-only holding (a managed account, pension, GIC...): `ticker` holds its name,
+    // `balance` its current value in `currency`, `avgPrice` the total amount put in (optional), shares 0.
+    balance: doublePrecision("balance"),
   },
   (t) => [index("ix_holdings_portfolio").on(t.portfolioId)],
 );

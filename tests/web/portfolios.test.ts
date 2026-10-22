@@ -31,9 +31,9 @@ describe("saved portfolios", () => {
     const loaded = await loadPortfolio(ALICE, id);
     expect(loaded?.name).toBe("Family TFSA");
     expect(loaded?.holdings).toEqual([
-      { ticker: "AAPL", shares: 10, avgBuyPrice: 150, currency: "USD", account: "TFSA" },
-      { ticker: "SHOP.TO", shares: 20, avgBuyPrice: null, currency: null, account: null },
-      { ticker: "XEQT.TO", shares: 12.5, avgBuyPrice: 30.1, currency: "CAD", account: "RRSP" },
+      { ticker: "AAPL", shares: 10, avgBuyPrice: 150, currency: "USD", account: "TFSA", balance: null },
+      { ticker: "SHOP.TO", shares: 20, avgBuyPrice: null, currency: null, account: null, balance: null },
+      { ticker: "XEQT.TO", shares: 12.5, avgBuyPrice: 30.1, currency: "CAD", account: "RRSP", balance: null },
     ]);
   });
 
@@ -82,7 +82,7 @@ describe("saved portfolios", () => {
     expect(await updatePortfolio(ALICE, id, "Edited", [{ ticker: "vfv.to", shares: 3, avgBuyPrice: null, currency: null, account: "TFSA" }])).toBe(true);
     const loaded = await loadPortfolio(ALICE, id);
     expect(loaded?.name).toBe("Edited");
-    expect(loaded?.holdings).toEqual([{ ticker: "VFV.TO", shares: 3, avgBuyPrice: null, currency: null, account: "TFSA" }]);
+    expect(loaded?.holdings).toEqual([{ ticker: "VFV.TO", shares: 3, avgBuyPrice: null, currency: null, account: "TFSA", balance: null }]);
     await expect(updatePortfolio(ALICE, id, "Also mine", [])).rejects.toBeInstanceOf(PortfolioNameError);
     expect(await updatePortfolio(BOB, id, "Stolen", [])).toBe(false);
     expect((await loadPortfolio(ALICE, id))?.holdings).toHaveLength(1);
@@ -100,6 +100,18 @@ describe("saved portfolios", () => {
     expect(all.portfolios).toBe(2);
     expect(all.holdings.map((h) => h.ticker)).toEqual(["SHOP.TO", "XEQT.TO", "AAPL"]); // newest portfolio first, in saved order
     expect((await loadAllPortfolios(BOB)).portfolios).toBe((await listPortfolios(BOB)).length); // only Bob's own
+  });
+
+  it("saves balance-only holdings with their name as typed", async () => {
+    const { id } = await savePortfolio(ALICE, "With a managed account", [
+      HOLDINGS[0],
+      { ticker: " Wealthsimple Managed ", shares: 0, balance: 25000, avgBuyPrice: 20000, currency: null, account: "Non-registered" },
+      { ticker: "No balance", shares: 0, balance: Number.NaN, avgBuyPrice: null, currency: null, account: null }, // dropped
+    ]);
+    expect((await loadPortfolio(ALICE, id))?.holdings).toEqual([
+      { ticker: "AAPL", shares: 10, avgBuyPrice: 150, currency: "USD", account: "TFSA", balance: null },
+      { ticker: "Wealthsimple Managed", shares: 0, avgBuyPrice: 20000, currency: "CAD", account: "Non-registered", balance: 25000 },
+    ]);
   });
 
   it("names are validated", async () => {

@@ -101,6 +101,8 @@ def compute_performance(figures, history: pd.DataFrame, benchmark: str, period: 
     """Backtest of figures.positions over `period`, or None without enough history."""
     close = _field(history, "Close")
     positions = figures.by_ticker() if not figures.positions.empty else figures.positions
+    # Balance-only holdings have no price history; the backtest covers the priced holdings.
+    positions = positions[~positions["Ticker"].isin(figures.balance_tickers)]
     if close.empty or positions.empty:
         return None
     base = figures.base

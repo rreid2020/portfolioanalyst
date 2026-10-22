@@ -59,6 +59,9 @@ class Figures:
     unpriced: list = field(default_factory=list)
     # ticker -> divisor from the quote's units to its currency (100 for GBp)
     unit_divisors: dict = field(default_factory=dict)
+    # names of balance-only holdings (managed accounts and the like): valued at their stated balance,
+    # with no quote, price history or dividends
+    balance_tickers: list = field(default_factory=list)
     total_value: float = 0.0
     total_cost: float | None = None  # positions with a known average price only
     cost_covered_value: float = 0.0  # market value of those positions
@@ -162,8 +165,12 @@ def normalize(price, currency):
     return (None if price is None else price / factor), major
 
 
+BALANCE_SECTOR = "Managed (holdings unknown)"
+BALANCE_NAME = "Balance only"
+
+
 def needed_currencies(holdings, quotes) -> set:
-    currencies = set()
+    currencies = {h["currency"] for h in holdings if h.get("balance") is not None}
     for h in holdings:
         quote = quotes.get(h["ticker"])
         if quote:
@@ -187,7 +194,31 @@ def compute(holdings, quotes: dict, fx: dict, base: str) -> Figures:
     has_cost = False
     day_change = 0.0
     has_day_change = False
+    balance_tickers = []
     for h in holdings:
+        if h.get("balance") is not None:
+            # A managed account or other balance: its value is what the user entered, in its currency;
+            # avg_price holds the total amount put in. Shares are currency units at a price of 1.
+            currency = h["currency"]
+            if currency not in fx:
+                unpriced.append(h["ticker"])
+                continue
+            value = h["balance"] * fx[currency]
+            cost = pl = pl_pct = None
+            if h.get("avg_price") is not None:
+                cost = h["avg_price"] * fx[currency]
+                pl = value - cost
+                pl_pct = pl / cost * 100 if cost else None
+                total_cost += cost
+                cost_covered_value += value
+                has_cost = True
+            balance_tickers.append(h["ticker"])
+            rows.append({
+                "Ticker": h["ticker"], "Account": h.get("account") or UNSPECIFIED_ACCOUNT, "Name": BALANCE_NAME,
+                "Shares": h["balance"], "Price": 1.0, "Currency": currency, "Value": value, "Cost": cost,
+                "P/L": pl, "P/L %": pl_pct, "Day change": None, "Sector": BALANCE_SECTOR, "Country": "Unknown",
+            })
+            continue
         quote = quotes.get(h["ticker"])
         if quote is None:
             unpriced.append(h["ticker"])
@@ -245,6 +276,7 @@ def compute(holdings, quotes: dict, fx: dict, base: str) -> Figures:
         fx={c: r for c, r in fx.items() if c != base},
         unpriced=unpriced,
         unit_divisors=unit_divisors,
+        balance_tickers=sorted(set(balance_tickers)),
         total_value=total_value,
         total_cost=total_cost if has_cost else None,
         cost_covered_value=cost_covered_value,
@@ -286,6 +318,13 @@ def to_markdown(figures: Figures) -> str:
         "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in figures.positions.to_dict("records"):
+        if r["Ticker"] in figures.balance_tickers:
+            lines.append(
+                f"| {r['Ticker']} | {r['Account']} | balance only, holdings unknown | — | — | {r['Currency']} "
+                f"| {r['Value']:,.2f} | {_amount(r['Cost'])} | {_amount(r['P/L'])} | {_pct(r['P/L %'])} "
+                f"| {r['Weight %']:.1f} | — | — |"
+            )
+            continue
         lines.append(
             f"| {r['Ticker']} | {r['Account']} | {r['Name']} | {r['Shares']:g} | {r['Price']:,.2f} | {r['Currency']} "
             f"| {r['Value']:,.2f} | {_amount(r['Cost'])} | {_amount(r['P/L'])} | {_pct(r['P/L %'])} "

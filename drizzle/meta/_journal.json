@@ -36,6 +36,13 @@
       "when": 1792676015664,
       "tag": "0004_combined_analyses",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792679072631,
+      "tag": "0005_holding_balances",
+      "breakpoints": true
     }
   ]
 }

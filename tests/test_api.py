@@ -107,6 +107,54 @@ class FiguresTest(ApiTestCase):
         self.assertEqual(r.status_code, 422)
 
 
+MANAGED = {"ticker": "Wealthsimple Managed", "balance": 10000, "avgBuyPrice": 8000, "currency": "CAD", "account": "Non-registered"}
+
+
+class BalanceHoldingTest(ApiTestCase):
+    """Managed accounts and the like: a balance, no holdings, no quotes."""
+
+    def test_counts_in_totals_without_a_quote(self):
+        r = self.client.post("/api/py/figures", json={"holdings": [HOLDINGS[0], MANAGED]})
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        requested = {t for call in portfolio_metrics.fetch_quotes.call_args_list for t in call.args[0]}
+        self.assertNotIn("Wealthsimple Managed", requested)
+        self.assertEqual(body["totals"]["value"], 2800 + 10000)
+        self.assertEqual(body["totals"]["pl"], 700 + 2000)
+        self.assertEqual(body["balances"], ["Wealthsimple Managed"])
+        managed = next(p for p in body["positions"] if p["ticker"] == "Wealthsimple Managed")
+        self.assertTrue(managed["balanceOnly"])
+        self.assertEqual((managed["value"], managed["account"], managed["sector"]), (10000, "Non-registered", "Managed (holdings unknown)"))
+        self.assertFalse(next(p for p in body["positions"] if p["ticker"] == "AAPL")["balanceOnly"])
+
+    def test_converts_a_usd_balance_and_needs_no_cost(self):
+        usd = {"ticker": "US pension", "balance": 1000, "currency": "USD"}
+        body = self.client.post("/api/py/figures", json={"holdings": [usd]}).json()
+        self.assertEqual(body["totals"]["value"], 1400)
+        self.assertIsNone(body["totals"]["cost"])
+
+    def test_left_out_of_the_backtest_but_in_accounts(self):
+        body = self.client.post("/api/py/analytics", json={"holdings": [HOLDINGS[0], MANAGED]}).json()
+        self.assertNotIn("Wealthsimple Managed", body["performance"]["excluded"])
+        accounts = {a["account"]: a["value"] for a in body["accountSummary"]}
+        self.assertEqual(accounts["Non-registered"], 10000)
+
+    def test_rebalances_in_currency_units(self):
+        r = self.client.post("/api/py/rebalance", json={"holdings": [HOLDINGS[0], MANAGED], "targets": {"AAPL": 50, "Wealthsimple Managed": 50}, "fractional": False})
+        trades = {t["ticker"]: t for t in r.json()["plan"]["trades"]}
+        self.assertEqual(trades["Wealthsimple Managed"]["action"], "Sell")
+        self.assertAlmostEqual(trades["Wealthsimple Managed"]["amount"], -3600, delta=200)
+
+    def test_prompt_says_the_holdings_are_unknown(self):
+        prompt = self.client.post("/api/py/prompt", json={"holdings": [HOLDINGS[0], MANAGED]}).json()["prompt"]
+        self.assertIn("| Wealthsimple Managed (managed account, holdings unknown) | balance 10,000.00 | 8,000.00 invested | CAD | Non-registered |", prompt)
+        self.assertIn("balance only, holdings unknown", prompt)
+
+    def test_blank_or_zero_balances_are_skipped(self):
+        r = self.client.post("/api/py/figures", json={"holdings": [HOLDINGS[0], {**MANAGED, "balance": 0}, {**MANAGED, "ticker": " "}]})
+        self.assertEqual(r.json()["balances"], [])
+
+
 class AnalyticsTest(ApiTestCase):
     def test_performance_dividends_and_accounts(self):
         r = self.client.post("/api/py/analytics", json={"holdings": HOLDINGS, "benchmark": "SPY", "period": "6M"})
