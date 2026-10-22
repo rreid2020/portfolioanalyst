@@ -73,7 +73,8 @@ export function Nav({ portfolios, remembered }: { portfolios: { id: number; name
               {choices.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           ) : (
-            <Link href={base} className="truncate rounded-md px-3 py-1.5 text-sm font-medium text-white hover:bg-white/5" title={current.name}>{current.name}</Link>
+            // A label, not a link: Dashboard below already opens it.
+            <div className="truncate px-3 pb-1 text-xs text-brand-100/80" title={current.name}>{current.name}</div>
           )}
           <NavLink href={base} label="Dashboard" active={onPortfolio && !editing && DASHBOARD_TABS.includes(tab)} />
           {VIEWS.map((v) => (
