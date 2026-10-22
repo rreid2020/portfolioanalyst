@@ -2,6 +2,7 @@
 // (accounts, performance, dividends) render inside a Suspense boundary because the price history is slow.
 import Link from "next/link";
 import { Card, Empty, Notice, Stat } from "@/components/ui";
+import { DataTable, type Column, type Row } from "@/components/DataTable";
 import type { Analytics, Base, Figures, Meta, Position } from "@/lib/py";
 import { date, money, monthYear, num, pct, share, shares } from "@/lib/format";
 import { BarList, CorrelationGrid, fold, type Bar } from "./charts";
@@ -63,53 +64,66 @@ export function GainLossView({ figures, editHref }: { figures: Figures; editHref
   );
 }
 
+const red = (v: number | null | undefined) => (v != null && v < 0 ? "text-red-700" : undefined);
+
+function positionColumns(base: string): Column[] {
+  return [
+    { key: "ticker", label: "Ticker" },
+    { key: "account", label: "Account" },
+    { key: "name", label: "Name" },
+    { key: "shares", label: "Shares", kind: "number", align: "right" },
+    { key: "price", label: "Price", kind: "number", align: "right" },
+    { key: "currency", label: "Ccy" },
+    { key: "value", label: `Value (${base})`, kind: "number", align: "right" },
+    { key: "cost", label: `Cost (${base})`, kind: "number", align: "right" },
+    { key: "pl", label: `P/L (${base})`, kind: "number", align: "right" },
+    { key: "plPct", label: "P/L %", kind: "number", align: "right" },
+    { key: "dayChange", label: `Today (${base})`, kind: "number", align: "right" },
+    { key: "weight", label: "Weight", kind: "number", align: "right" },
+    { key: "sector", label: "Sector" },
+    { key: "country", label: "Country" },
+  ];
+}
+
+function positionRow(p: Position, base: string): Row {
+  const name = p.balanceOnly ? "Balance only (holdings unknown)" : p.name;
+  return {
+    key: `${p.ticker}|${p.account}`,
+    cells: {
+      ticker: { value: p.ticker, className: "font-medium text-slate-800" },
+      account: { value: p.account },
+      name: { value: name, className: "max-w-56 truncate text-slate-600", title: name },
+      shares: { value: p.balanceOnly ? null : p.shares, display: p.balanceOnly ? "—" : shares(p.shares) },
+      price: { value: p.balanceOnly ? null : p.price, display: p.balanceOnly ? "—" : money(p.price, p.currency) },
+      currency: { value: p.currency },
+      value: { value: p.value, display: money(p.value, base) },
+      cost: { value: p.cost, display: money(p.cost, base) },
+      pl: { value: p.pl, display: money(p.pl, base, { signed: true }), className: red(p.pl) },
+      plPct: { value: p.plPct, display: pct(p.plPct, 2) },
+      dayChange: { value: p.dayChange, display: money(p.dayChange, base, { signed: true }), className: red(p.dayChange) },
+      weight: { value: p.weightPct, display: share(p.weightPct) },
+      sector: { value: p.sector, className: "text-slate-600" },
+      country: { value: p.country, className: "text-slate-600" },
+    },
+  };
+}
+
 export function PositionsView({ figures }: { figures: Figures }) {
   const base = figures.base;
   return (
     <Card title="Positions" action={<span className="text-xs text-slate-500">Prices in the listing currency; amounts in {base}</span>}>
-      <div className="overflow-x-auto">
-        <table className="grid-table">
-          <thead>
-            <tr>
-              <th>Ticker</th><th>Account</th><th>Name</th><th className="num">Shares</th><th className="num">Price</th><th>Ccy</th>
-              <th className="num">Value ({base})</th><th className="num">Cost ({base})</th><th className="num">P/L ({base})</th><th className="num">P/L %</th>
-              <th className="num">Today ({base})</th><th className="num">Weight</th><th>Sector</th><th>Country</th>
-            </tr>
-          </thead>
-          <tbody>
-            {figures.positions.map((p: Position) => (
-              <tr key={`${p.ticker}|${p.account}`}>
-                <td className="font-medium text-slate-800">{p.ticker}</td>
-                <td>{p.account}</td>
-                <td className="max-w-56 truncate text-slate-600" title={p.name}>{p.balanceOnly ? "Balance only (holdings unknown)" : p.name}</td>
-                <td className="num">{p.balanceOnly ? "—" : shares(p.shares)}</td>
-                <td className="num">{p.balanceOnly ? "—" : money(p.price, p.currency)}</td>
-                <td>{p.currency}</td>
-                <td className="num">{money(p.value, base)}</td>
-                <td className="num">{money(p.cost, base)}</td>
-                <td className={`num ${p.pl != null && p.pl < 0 ? "text-red-700" : ""}`}>{money(p.pl, base, { signed: true })}</td>
-                <td className="num">{pct(p.plPct, 2)}</td>
-                <td className={`num ${p.dayChange != null && p.dayChange < 0 ? "text-red-700" : ""}`}>{money(p.dayChange, base, { signed: true })}</td>
-                <td className="num">{share(p.weightPct)}</td>
-                <td className="text-slate-600">{p.sector}</td>
-                <td className="text-slate-600">{p.country}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan={6}>Total</td>
-              <td className="num">{money(figures.totals.value, base)}</td>
-              <td className="num">{money(figures.totals.cost, base)}</td>
-              <td className="num">{money(figures.totals.pl, base, { signed: true })}</td>
-              <td className="num">{pct(figures.totals.plPct, 2)}</td>
-              <td className="num">{money(figures.totals.dayChange, base, { signed: true })}</td>
-              <td className="num">{share(100)}</td>
-              <td colSpan={2} />
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+      <DataTable label="Positions" columns={positionColumns(base)} rows={figures.positions.map((p) => positionRow(p, base))} footer={
+        <tr>
+          <td colSpan={6}>Total</td>
+          <td className="num">{money(figures.totals.value, base)}</td>
+          <td className="num">{money(figures.totals.cost, base)}</td>
+          <td className="num">{money(figures.totals.pl, base, { signed: true })}</td>
+          <td className="num">{pct(figures.totals.plPct, 2)}</td>
+          <td className="num">{money(figures.totals.dayChange, base, { signed: true })}</td>
+          <td className="num">{share(100)}</td>
+          <td colSpan={2} />
+        </tr>
+      } />
     </Card>
   );
 }
@@ -131,26 +145,30 @@ export function AccountsView({ figures, analytics, disclaimer, editHref }: { fig
       <div className="grid gap-4 lg:grid-cols-[2fr_3fr]">
         <Card title="Value by account"><BarList bars={bars} label="Share of market value by account" /></Card>
         <Card title="Accounts">
-          <div className="overflow-x-auto">
-            <table className="grid-table">
-              <thead>
-                <tr><th>Account</th><th className="num">Holdings</th><th className="num">Value ({base})</th><th className="num">P/L ({base})</th><th className="num">P/L %</th><th className="num">Weight</th><th className="num">Dividends ({base}/yr)</th></tr>
-              </thead>
-              <tbody>
-                {analytics.accountSummary.map((a) => (
-                  <tr key={a.account}>
-                    <td className="font-medium text-slate-800">{a.account}</td>
-                    <td className="num">{a.holdings}</td>
-                    <td className="num">{money(a.value, base)}</td>
-                    <td className={`num ${a.pl != null && a.pl < 0 ? "text-red-700" : ""}`}>{money(a.pl, base, { signed: true })}</td>
-                    <td className="num">{pct(a.plPct, 2)}</td>
-                    <td className="num">{share(a.weightPct)}</td>
-                    <td className="num">{money(a.annualIncome, base)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            label="Accounts"
+            columns={[
+              { key: "account", label: "Account" },
+              { key: "holdings", label: "Holdings", kind: "number", align: "right" },
+              { key: "value", label: `Value (${base})`, kind: "number", align: "right" },
+              { key: "pl", label: `P/L (${base})`, kind: "number", align: "right" },
+              { key: "plPct", label: "P/L %", kind: "number", align: "right" },
+              { key: "weight", label: "Weight", kind: "number", align: "right" },
+              { key: "income", label: `Dividends (${base}/yr)`, kind: "number", align: "right" },
+            ]}
+            rows={analytics.accountSummary.map((a) => ({
+              key: a.account,
+              cells: {
+                account: { value: a.account, className: "font-medium text-slate-800" },
+                holdings: { value: a.holdings },
+                value: { value: a.value, display: money(a.value, base) },
+                pl: { value: a.pl, display: money(a.pl, base, { signed: true }), className: red(a.pl) },
+                plPct: { value: a.plPct, display: pct(a.plPct, 2) },
+                weight: { value: a.weightPct, display: share(a.weightPct) },
+                income: { value: a.annualIncome, display: money(a.annualIncome, base) },
+              },
+            }))}
+          />
         </Card>
       </div>
       <Card title="Account placement hints">
@@ -201,23 +219,28 @@ export function DividendsView({ analytics, base, balances }: { analytics: Analyt
             />
           </Card>
           <Card title="Dividends by position">
-            <div className="overflow-x-auto">
-              <table className="grid-table">
-                <thead><tr><th>Ticker</th><th>Account</th><th className="num">Dividend / share (12 mo)</th><th>Ccy</th><th className="num">Yield</th><th className="num">Annual income ({base})</th></tr></thead>
-                <tbody>
-                  {d.rows.map((r) => (
-                    <tr key={`${r.ticker}|${r.account}`}>
-                      <td className="font-medium text-slate-800">{r.ticker}</td>
-                      <td>{r.account}</td>
-                      <td className="num">{money(r.dividendPerShare, r.currency, { digits: 4 })}</td>
-                      <td>{r.currency}</td>
-                      <td className="num">{share(r.yieldPct, 2)}</td>
-                      <td className="num">{money(r.annualIncome, base)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              label="Dividends by position"
+              columns={[
+                { key: "ticker", label: "Ticker" },
+                { key: "account", label: "Account" },
+                { key: "perShare", label: "Dividend / share (12 mo)", kind: "number", align: "right" },
+                { key: "currency", label: "Ccy" },
+                { key: "yield", label: "Yield", kind: "number", align: "right" },
+                { key: "income", label: `Annual income (${base})`, kind: "number", align: "right" },
+              ]}
+              rows={d.rows.map((r) => ({
+                key: `${r.ticker}|${r.account}`,
+                cells: {
+                  ticker: { value: r.ticker, className: "font-medium text-slate-800" },
+                  account: { value: r.account ?? null },
+                  perShare: { value: r.dividendPerShare, display: money(r.dividendPerShare, r.currency, { digits: 4 }) },
+                  currency: { value: r.currency },
+                  yield: { value: r.yieldPct, display: share(r.yieldPct, 2) },
+                  income: { value: r.annualIncome, display: money(r.annualIncome, base) },
+                },
+              }))}
+            />
           </Card>
         </>
       ) : (

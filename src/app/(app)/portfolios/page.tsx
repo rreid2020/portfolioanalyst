@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, Empty, PageHeader } from "@/components/ui";
+import { DataTable } from "@/components/DataTable";
 import { listPortfolios } from "@/lib/portfolios";
 import { requireUser } from "@/lib/user";
 import { date } from "@/lib/format";
@@ -32,28 +33,24 @@ export default async function PortfoliosPage() {
             </div>
           </Empty>
         ) : (
-          <table className="grid-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th className="num">Holdings</th>
-                <th>Updated</th>
-                <th className="w-0" />
-              </tr>
-            </thead>
-            <tbody>
-              {saved.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <Link href={`/portfolios/${p.id}`} className="font-medium text-brand-700 hover:underline">{p.name}</Link>
-                  </td>
-                  <td className="num">{p.holdings}</td>
-                  <td className="whitespace-nowrap text-slate-600">{date(p.updatedAt)}</td>
-                  <td><PortfolioActions id={p.id} name={p.name} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            label="Saved portfolios"
+            columns={[
+              { key: "name", label: "Name" },
+              { key: "holdings", label: "Holdings", kind: "number", align: "right" },
+              { key: "updated", label: "Updated", kind: "date" },
+              { key: "actions", label: "Actions", header: <span className="sr-only">Actions</span>, sortable: false, filterable: false, className: "w-0" },
+            ]}
+            rows={saved.map((p) => ({
+              key: String(p.id),
+              cells: {
+                name: { value: p.name, display: <Link href={`/portfolios/${p.id}`} className="font-medium text-brand-700 hover:underline">{p.name}</Link> },
+                holdings: { value: p.holdings },
+                updated: { value: p.updatedAt, label: date(p.updatedAt), className: "whitespace-nowrap text-slate-600" },
+                actions: { value: null, display: <PortfolioActions id={p.id} name={p.name} /> },
+              },
+            }))}
+          />
         )}
       </Card>
     </div>

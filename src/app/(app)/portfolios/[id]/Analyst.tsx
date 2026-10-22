@@ -7,6 +7,7 @@ import { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AiBadge, Card } from "@/components/ui";
+import { MarkdownTable } from "@/components/MarkdownTable";
 import { DEFAULT_QUESTION, MODELS, toolLabel } from "@/lib/analyst-shared";
 import { dateTime, money } from "@/lib/format";
 import { filename, toHtml, toMarkdown, type ChatTurn } from "@/lib/report";
@@ -22,7 +23,7 @@ const textOf = (m: Message) => m.parts.flatMap((p) => (p.type === "text" ? [p.te
 function Markdown({ children }: { children: string }) {
   return (
     <div className="prose prose-sm prose-slate max-w-none prose-headings:tracking-tight prose-a:text-brand-600 prose-table:text-[0.8125rem] prose-th:bg-slate-50 prose-th:px-2 prose-td:px-2">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{children}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ table: ({ node }) => <MarkdownTable node={node} /> }}>{children}</ReactMarkdown>
     </div>
   );
 }

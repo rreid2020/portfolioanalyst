@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Card, Empty, Notice, Stat } from "@/components/ui";
+import { DataTable } from "@/components/DataTable";
 import { money, share, shares } from "@/lib/format";
 import type { Holding } from "@/lib/portfolios";
 
@@ -132,29 +133,37 @@ export function Rebalancer({ holdings, base, analystPath }: { holdings: Holding[
             Targets start at your current weights. Change them{groupBy === "Holding" ? ", or add a row for a holding you don't own yet" : ""}; they&rsquo;re scaled to 100% if they don&rsquo;t add up.
           </p>
           {targets ? (
-            <table className="grid-table mt-2">
-              <thead><tr><th>{label}</th><th className="num">Current</th><th className="num">Target %</th>{groupBy === "Holding" && <th className="w-0" />}</tr></thead>
-              <tbody>
-                {targets.map((t) => (
-                  <tr key={t.key}>
-                    <td>
-                      {t.currentPct == null ? (
-                        <input className="input w-28 uppercase" aria-label="Ticker to add" placeholder="e.g. VFV.TO" value={t.group} maxLength={20} onChange={(e) => edit(t.key, "group", e.target.value)} />
-                      ) : (
-                        <span className="font-medium text-slate-800">{t.group}</span>
-                      )}
-                    </td>
-                    <td className="num">{share(t.currentPct)}</td>
-                    <td className="num">
-                      <input className="input w-20 text-right" inputMode="decimal" aria-label={`Target % for ${t.group || "new holding"}`} value={t.target} onChange={(e) => edit(t.key, "target", e.target.value)} />
-                    </td>
-                    {groupBy === "Holding" && (
-                      <td>{t.currentPct == null && <button type="button" className="btn btn-secondary btn-sm" aria-label="Remove row" onClick={() => setTargets((ts) => ts && ts.filter((x) => x.key !== t.key))}>✕</button>}</td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              className="mt-2"
+              label="Targets"
+              columns={[
+                { key: "group", label },
+                { key: "current", label: "Current", kind: "number", align: "right" },
+                { key: "target", label: "Target %", kind: "number", align: "right" },
+                ...(groupBy === "Holding" ? [{ key: "remove", label: "Remove", header: <span className="sr-only">Remove</span>, sortable: false, filterable: false, className: "w-0" }] : []),
+              ]}
+              rows={targets.map((t) => ({
+                key: t.key,
+                pinned: t.currentPct == null && !t.group.trim(), // a holding being added stays visible
+                cells: {
+                  group: {
+                    value: t.group,
+                    display: t.currentPct == null
+                      ? <input className="input w-28 uppercase" aria-label="Ticker to add" placeholder="e.g. VFV.TO" value={t.group} maxLength={20} onChange={(e) => edit(t.key, "group", e.target.value)} />
+                      : <span className="font-medium text-slate-800">{t.group}</span>,
+                  },
+                  current: { value: t.currentPct, display: share(t.currentPct) },
+                  target: {
+                    value: t.target, label: t.target,
+                    display: <input className="input w-20 text-right" inputMode="decimal" aria-label={`Target % for ${t.group || "new holding"}`} value={t.target} onChange={(e) => edit(t.key, "target", e.target.value)} />,
+                  },
+                  remove: {
+                    value: null,
+                    display: t.currentPct == null && <button type="button" className="btn btn-secondary btn-sm" aria-label="Remove row" onClick={() => setTargets((ts) => ts && ts.filter((x) => x.key !== t.key))}>✕</button>,
+                  },
+                },
+              }))}
+            />
           ) : (
             <Empty>Loading current weights…</Empty>
           )}
@@ -182,44 +191,60 @@ export function Rebalancer({ holdings, base, analystPath }: { holdings: Holding[
                 {plan.realizedGain ? <Stat label={`Est. capital gain (${base})`} value={money(plan.realizedGain, base, { whole: true })} sub="Non-registered sales; half is taxable" tone="warn" /> : null}
               </div>
               <Card title="Trades" action={<Link href={`${analystPath}&rebalance=${encodeURIComponent(JSON.stringify(options))}`} className="btn btn-secondary btn-sm">Ask the analyst about this plan</Link>}>
-                <div className="overflow-x-auto">
-                  <table className="grid-table">
-                    <thead><tr><th>Action</th><th>Ticker</th><th>Account</th><th className="num">Shares</th><th className="num">Price</th><th>Ccy</th><th className="num">Amount ({base})</th><th className="num">Now</th><th className="num">After</th></tr></thead>
-                    <tbody>
-                      {plan.trades.map((t) => (
-                        <tr key={`${t.ticker}|${t.account}`}>
-                          <td><span className={`inline-flex rounded px-1.5 py-0.5 text-[0.7rem] font-medium ring-1 ring-inset ${t.action === "Buy" ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-amber-50 text-amber-800 ring-amber-200"}`}>{t.action}</span></td>
-                          <td className="font-medium text-slate-800">{t.ticker}</td>
-                          <td>{t.account || "—"}</td>
-                          {/* A balance (managed account) moves in money, not shares. */}
-                          <td className="num">{balanceNames.has(t.ticker) ? "—" : shares(t.shares)}</td>
-                          <td className="num">{balanceNames.has(t.ticker) ? "—" : money(t.price, t.currency)}</td>
-                          <td>{t.currency}</td>
-                          <td className="num">{money(Math.abs(t.amount), base)}</td>
-                          <td className="num">{share(t.currentPct)}</td>
-                          <td className="num">{share(t.afterPct)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  label="Trades"
+                  columns={[
+                    { key: "action", label: "Action" },
+                    { key: "ticker", label: "Ticker" },
+                    { key: "account", label: "Account" },
+                    { key: "shares", label: "Shares", kind: "number", align: "right" },
+                    { key: "price", label: "Price", kind: "number", align: "right" },
+                    { key: "currency", label: "Ccy" },
+                    { key: "amount", label: `Amount (${base})`, kind: "number", align: "right" },
+                    { key: "now", label: "Now", kind: "number", align: "right" },
+                    { key: "after", label: "After", kind: "number", align: "right" },
+                  ]}
+                  rows={plan.trades.map((t) => {
+                    const balance = balanceNames.has(t.ticker); // a managed account moves in money, not shares
+                    return {
+                      key: `${t.ticker}|${t.account}`,
+                      cells: {
+                        action: { value: t.action, display: <span className={`inline-flex rounded px-1.5 py-0.5 text-[0.7rem] font-medium ring-1 ring-inset ${t.action === "Buy" ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-amber-50 text-amber-800 ring-amber-200"}`}>{t.action}</span> },
+                        ticker: { value: t.ticker, className: "font-medium text-slate-800" },
+                        account: { value: t.account || null, display: t.account || "—" },
+                        shares: { value: balance ? null : t.shares, display: balance ? "—" : shares(t.shares) },
+                        price: { value: balance ? null : t.price, display: balance ? "—" : money(t.price, t.currency) },
+                        currency: { value: t.currency },
+                        amount: { value: Math.abs(t.amount), display: money(Math.abs(t.amount), base) },
+                        now: { value: t.currentPct, display: share(t.currentPct) },
+                        after: { value: t.afterPct, display: share(t.afterPct) },
+                      },
+                    };
+                  })}
+                />
               </Card>
               {groupBy !== "Holding" && (
                 <Card title={`By ${groupBy.toLowerCase()}`}>
-                  <table className="grid-table">
-                    <thead><tr><th>{groupBy}</th><th className="num">Now</th><th className="num">Target</th><th className="num">After</th><th className="num">Change ({base})</th></tr></thead>
-                    <tbody>
-                      {plan.groups.map((g) => (
-                        <tr key={g.group}>
-                          <td className="font-medium text-slate-800">{g.group}</td>
-                          <td className="num">{share(g.currentPct)}</td>
-                          <td className="num">{share(g.targetPct)}</td>
-                          <td className="num">{share(g.afterPct)}</td>
-                          <td className={`num ${g.change < 0 ? "text-red-700" : ""}`}>{money(g.change, base, { signed: true })}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <DataTable
+                    label={`By ${groupBy.toLowerCase()}`}
+                    columns={[
+                      { key: "group", label: groupBy },
+                      { key: "now", label: "Now", kind: "number", align: "right" },
+                      { key: "target", label: "Target", kind: "number", align: "right" },
+                      { key: "after", label: "After", kind: "number", align: "right" },
+                      { key: "change", label: `Change (${base})`, kind: "number", align: "right" },
+                    ]}
+                    rows={plan.groups.map((g) => ({
+                      key: g.group,
+                      cells: {
+                        group: { value: g.group, className: "font-medium text-slate-800" },
+                        now: { value: g.currentPct, display: share(g.currentPct) },
+                        target: { value: g.targetPct, display: share(g.targetPct) },
+                        after: { value: g.afterPct, display: share(g.afterPct) },
+                        change: { value: g.change, display: money(g.change, base, { signed: true }), className: g.change < 0 ? "text-red-700" : undefined },
+                      },
+                    }))}
+                  />
                 </Card>
               )}
             </>

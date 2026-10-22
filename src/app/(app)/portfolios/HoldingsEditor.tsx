@@ -7,10 +7,11 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { saveNewAction, updateAction } from "@/app/portfolio-actions";
 import { ACCOUNT_TYPES } from "@/lib/accounts";
 import {
-  checkBalances, checkRows, emptyBalance, emptyRow, pastedRows, toBalanceRow, toRow, type BalanceField, type BalanceRow, type Field, type Row,
+  checkBalances, checkRows, emptyBalance, emptyRow, FIELDS, pastedRows, toBalanceRow, toRow, type BalanceField, type BalanceRow, type Field, type Row,
 } from "@/lib/holdings";
 import { MAX_NAME } from "@/lib/limits";
 import { BrokeragePanel, useBrokerage, type Loaded } from "./BrokeragePanel";
+import { DataTable, type Cell } from "@/components/DataTable";
 
 type Saved = { ticker: string; shares: number | null; avgBuyPrice: number | null; currency: string | null; account: string | null; balance?: number | null };
 type Props = { portfolio?: { id: number; name: string; holdings: Saved[] } };
@@ -196,52 +197,51 @@ export function HoldingsEditor({ portfolio }: Props) {
         </div>
       )}
 
-      <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-        <table className="grid-table">
-          <thead>
-            <tr>
-              {COLUMNS.map((c) => (
-                <th key={c.field} className={`${c.className} ${c.numeric ? "num" : ""}`} title={c.hint}>{c.label}</th>
-              ))}
-              <th className="w-0"><span className="sr-only">Remove</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => {
-              const errs = showErrors ? checked.errors[r.key] : undefined;
-              return (
-                <tr key={r.key}>
-                  {COLUMNS.map((c) => {
-                    const err = errs?.[c.field];
-                    const label = `${c.label}, row ${i + 1}`;
-                    return (
-                      <td key={c.field} className="align-top">
-                        {c.field === "account" ? (
-                          <AccountSelect value={r.account} label={label} onChange={(v) => edit(r.key, "account", v)} />
-                        ) : (
-                          <input
-                            className={`input w-full ${c.numeric ? "text-right" : ""} ${c.field === "ticker" || c.field === "currency" ? "uppercase" : ""} ${err ? "!border-red-400 bg-red-50" : ""}`}
-                            aria-label={label}
-                            aria-invalid={Boolean(err)}
-                            inputMode={c.numeric ? "decimal" : undefined}
-                            value={r[c.field]}
-                            maxLength={c.field === "currency" ? 3 : 30}
-                            onChange={(e) => edit(r.key, c.field, e.target.value)}
-                            onPaste={(e) => paste(e, r.key, c.field)}
-                          />
-                        )}
-                        {err && <div className="mt-0.5 text-[0.7rem] text-red-700">{err}</div>}
-                      </td>
-                    );
-                  })}
-                  <td className="align-top">
-                    <button type="button" className="btn btn-secondary btn-sm" aria-label={`Remove row ${i + 1}`} onClick={() => remove(r.key)}>✕</button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <DataTable
+          label="Holdings"
+          columns={[
+            ...COLUMNS.map((c) => ({
+              key: c.field, label: c.label, header: <span title={c.hint}>{c.label}</span>,
+              kind: c.numeric ? ("number" as const) : ("text" as const), align: c.numeric ? ("right" as const) : undefined, className: c.className,
+            })),
+            { key: "remove", label: "Remove", header: <span className="sr-only">Remove</span>, sortable: false, filterable: false, className: "w-0" },
+          ]}
+          rows={rows.map((r, i) => {
+            const errs = showErrors ? checked.errors[r.key] : undefined;
+            const cells: Record<string, Cell> = {};
+            for (const c of COLUMNS) {
+              const err = errs?.[c.field];
+              const label = `${c.label}, row ${i + 1}`;
+              cells[c.field] = {
+                value: r[c.field].trim() || null,
+                className: "align-top",
+                display: (
+                  <>
+                    {c.field === "account" ? (
+                      <AccountSelect value={r.account} label={label} onChange={(v) => edit(r.key, "account", v)} />
+                    ) : (
+                      <input
+                        className={`input w-full ${c.numeric ? "text-right" : ""} ${c.field === "ticker" || c.field === "currency" ? "uppercase" : ""} ${err ? "!border-red-400 bg-red-50" : ""}`}
+                        aria-label={label}
+                        aria-invalid={Boolean(err)}
+                        inputMode={c.numeric ? "decimal" : undefined}
+                        value={r[c.field]}
+                        maxLength={c.field === "currency" ? 3 : 30}
+                        onChange={(e) => edit(r.key, c.field, e.target.value)}
+                        onPaste={(e) => paste(e, r.key, c.field)}
+                      />
+                    )}
+                    {err && <div className="mt-0.5 text-[0.7rem] text-red-700">{err}</div>}
+                  </>
+                ),
+              };
+            }
+            cells.remove = { value: null, className: "align-top", display: <button type="button" className="btn btn-secondary btn-sm" aria-label={`Remove row ${i + 1}`} onClick={() => remove(r.key)}>✕</button> };
+            // A row with nothing typed yet stays visible (at the bottom) whatever the sort and filters.
+            return { key: r.key, pinned: FIELDS.every((f) => !r[f].trim()), cells };
+          })}
+        />
         <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2">
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setRows((rs) => [...rs, emptyRow()])}>+ Add row</button>
           <span className="text-xs text-slate-500">{checked.holdings.length} holding{checked.holdings.length === 1 ? "" : "s"}{errorCount ? `, ${errorCount} to fix` : ""}</span>
@@ -257,53 +257,51 @@ export function HoldingsEditor({ portfolio }: Props) {
           </p>
         </header>
         {balances.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="grid-table">
-              <thead>
-                <tr>
-                  {BALANCE_COLUMNS.map((c) => <th key={c.field} className={`${c.className} ${c.numeric ? "num" : ""}`} title={c.hint}>{c.label}</th>)}
-                  <th className="w-0"><span className="sr-only">Remove</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {balances.map((b, i) => {
-                  const errs = showErrors ? checkedBalances.errors[b.key] : undefined;
-                  const set = (field: BalanceField, value: string) => setBalances((bs) => bs.map((x) => (x.key === b.key ? { ...x, [field]: value } : x)));
-                  return (
-                    <tr key={b.key}>
-                      {BALANCE_COLUMNS.map((c) => {
-                        const err = errs?.[c.field];
-                        const label = `${c.label}, balance ${i + 1}`;
-                        return (
-                          <td key={c.field} className="align-top">
-                            {c.field === "account" ? (
-                              <AccountSelect value={b.account} label={label} onChange={(v) => set("account", v)} />
-                            ) : (
-                              <input
-                                className={`input w-full ${c.numeric ? "text-right" : ""} ${c.field === "currency" ? "uppercase" : ""} ${err ? "!border-red-400 bg-red-50" : ""}`}
-                                aria-label={label}
-                                aria-invalid={Boolean(err)}
-                                inputMode={c.numeric ? "decimal" : undefined}
-                                placeholder={c.field === "name" ? "e.g. Wealthsimple Managed" : c.field === "invested" ? "optional" : undefined}
-                                autoFocus={highlight === "balance" && c.field === "name" && i === balances.length - 1 && !b.name}
-                                value={b[c.field]}
-                                maxLength={c.field === "currency" ? 3 : c.field === "name" ? 60 : 20}
-                                onChange={(e) => set(c.field, e.target.value)}
-                              />
-                            )}
-                            {err && <div className="mt-0.5 text-[0.7rem] text-red-700">{err}</div>}
-                          </td>
-                        );
-                      })}
-                      <td className="align-top">
-                        <button type="button" className="btn btn-secondary btn-sm" aria-label={`Remove balance ${i + 1}`} onClick={() => setBalances((bs) => bs.filter((x) => x.key !== b.key))}>✕</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            label="Managed accounts and other balances"
+            columns={[
+              ...BALANCE_COLUMNS.map((c) => ({
+                key: c.field, label: c.label, header: <span title={c.hint}>{c.label}</span>,
+                kind: c.numeric ? ("number" as const) : ("text" as const), align: c.numeric ? ("right" as const) : undefined, className: c.className,
+              })),
+              { key: "remove", label: "Remove", header: <span className="sr-only">Remove</span>, sortable: false, filterable: false, className: "w-0" },
+            ]}
+            rows={balances.map((b, i) => {
+              const errs = showErrors ? checkedBalances.errors[b.key] : undefined;
+              const set = (field: BalanceField, value: string) => setBalances((bs) => bs.map((x) => (x.key === b.key ? { ...x, [field]: value } : x)));
+              const cells: Record<string, Cell> = {};
+              for (const c of BALANCE_COLUMNS) {
+                const err = errs?.[c.field];
+                const label = `${c.label}, balance ${i + 1}`;
+                cells[c.field] = {
+                  value: b[c.field].trim() || null,
+                  className: "align-top",
+                  display: (
+                    <>
+                      {c.field === "account" ? (
+                        <AccountSelect value={b.account} label={label} onChange={(v) => set("account", v)} />
+                      ) : (
+                        <input
+                          className={`input w-full ${c.numeric ? "text-right" : ""} ${c.field === "currency" ? "uppercase" : ""} ${err ? "!border-red-400 bg-red-50" : ""}`}
+                          aria-label={label}
+                          aria-invalid={Boolean(err)}
+                          inputMode={c.numeric ? "decimal" : undefined}
+                          placeholder={c.field === "name" ? "e.g. Wealthsimple Managed" : c.field === "invested" ? "optional" : undefined}
+                          autoFocus={highlight === "balance" && c.field === "name" && i === balances.length - 1 && !b.name}
+                          value={b[c.field]}
+                          maxLength={c.field === "currency" ? 3 : c.field === "name" ? 60 : 20}
+                          onChange={(e) => set(c.field, e.target.value)}
+                        />
+                      )}
+                      {err && <div className="mt-0.5 text-[0.7rem] text-red-700">{err}</div>}
+                    </>
+                  ),
+                };
+              }
+              cells.remove = { value: null, className: "align-top", display: <button type="button" className="btn btn-secondary btn-sm" aria-label={`Remove balance ${i + 1}`} onClick={() => setBalances((bs) => bs.filter((x) => x.key !== b.key))}>✕</button> };
+              return { key: b.key, pinned: !b.name.trim() && !b.balance.trim() && !b.invested.trim(), cells };
+            })}
+          />
         )}
         <div className={`flex items-center justify-between px-3 py-2 ${balances.length ? "border-t border-slate-100" : ""}`}>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setBalances((bs) => [...bs, emptyBalance()])}>+ Add a balance</button>
