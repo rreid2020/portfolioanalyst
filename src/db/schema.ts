@@ -1,6 +1,6 @@
 // The tables the Streamlit app (db.py) created in Neon, unchanged, so saved portfolios carry over.
 // Timestamps are ISO 8601 UTC text, as db.py writes them; they sort correctly as text.
-import { bigint, doublePrecision, index, integer, jsonb, pgTable, text, unique } from "drizzle-orm/pg-core";
+import { bigint, doublePrecision, index, integer, jsonb, pgTable, text, unique, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(), // Clerk user id
@@ -64,3 +64,18 @@ export const brokerageConnections = pgTable("brokerage_connections", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+// Guided mode: steps a user marked done or skipped, as in ProjectCost. period = "setup" for one-time
+// steps, "YYYY-MM" for monthly ones.
+export const guideMarks = pgTable(
+  "guide_marks",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    stepKey: text("step_key").notNull(),
+    period: text("period").notNull(),
+    status: text("status").notNull(), // DONE | SKIPPED
+    at: text("at").notNull(),
+  },
+  (t) => [uniqueIndex("guide_marks_user_step_period").on(t.userId, t.stepKey, t.period)],
+);
