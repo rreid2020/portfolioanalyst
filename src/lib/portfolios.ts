@@ -47,6 +47,13 @@ export async function touchUser(userId: string, email: string | null, name: stri
     .onConflictDoUpdate({ target: users.id, set: { email, name, lastSeenAt: at } });
 }
 
+/** The user's row (email, name, last seen), or null before their first sign-in. */
+export async function getUser(userId: string) {
+  need(userId);
+  const [row] = await db.select({ email: users.email, name: users.name, lastSeenAt: users.lastSeenAt }).from(users).where(eq(users.id, userId));
+  return row ?? null;
+}
+
 /** Most recently updated first, with how many holdings each has. */
 export async function listPortfolios(userId: string): Promise<PortfolioSummary[]> {
   need(userId);

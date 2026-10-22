@@ -2,7 +2,8 @@
 // The holdings table you type into, paste a spreadsheet into, or fill from a broker's export.
 // Replaces the Streamlit app's st.data_editor; rows are checked here and again by the server.
 import Link from "next/link";
-import { useRef, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { saveNewAction, updateAction } from "@/app/portfolio-actions";
 import { ACCOUNT_TYPES } from "@/lib/accounts";
 import {
@@ -54,6 +55,24 @@ export function HoldingsEditor({ portfolio }: Props) {
   const [saving, startSaving] = useTransition();
   const file = useRef<HTMLInputElement>(null);
   const brokerage = useBrokerage();
+  // ?add=import or ?add=balance: the sidebar's "Import a file" / "Add a balance" point at that part of the editor.
+  const add = useSearchParams().get("add");
+  const importButton = useRef<HTMLButtonElement>(null);
+  const balancesSection = useRef<HTMLElement>(null);
+  const [highlight, setHighlight] = useState<"import" | "balance" | null>(null);
+  useEffect(() => {
+    if (add === "balance") {
+      setBalances((bs) => (bs.some((b) => !b.name.trim() && !b.balance.trim()) ? bs : [...bs, emptyBalance()]));
+      setHighlight("balance");
+      requestAnimationFrame(() => balancesSection.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+    } else if (add === "import") {
+      setHighlight("import");
+      importButton.current?.focus();
+      setMessage({ tone: "info", text: "Choose your broker's holdings export with Import CSV or Excel. Wealthsimple, Questrade, IBKR and most other brokers' files work as they are." });
+    } else {
+      setHighlight(null);
+    }
+  }, [add]);
 
   const checked = checkRows(rows);
   const checkedBalances = checkBalances(balances);
@@ -152,7 +171,7 @@ export function HoldingsEditor({ portfolio }: Props) {
             className="hidden"
             onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])}
           />
-          <button type="button" className="btn btn-secondary" disabled={importing} onClick={() => file.current?.click()}>
+          <button ref={importButton} type="button" className={`btn btn-secondary ${highlight === "import" ? "ring-2 ring-brand-500 ring-offset-1" : ""}`} disabled={importing} onClick={() => file.current?.click()}>
             {importing ? "Importing…" : "Import CSV or Excel"}
           </button>
           <a href="/api/py/template.csv" className="text-xs font-medium text-brand-600 hover:underline">Download template</a>
@@ -229,7 +248,7 @@ export function HoldingsEditor({ portfolio }: Props) {
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <section ref={balancesSection} className={`rounded-lg border bg-white shadow-sm ${highlight === "balance" ? "border-brand-500 ring-2 ring-brand-500/30" : "border-slate-200"}`}>
         <header className="border-b border-slate-100 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-800">Managed accounts and other balances</h2>
           <p className="mt-0.5 text-xs text-slate-500">
@@ -266,6 +285,7 @@ export function HoldingsEditor({ portfolio }: Props) {
                                 aria-invalid={Boolean(err)}
                                 inputMode={c.numeric ? "decimal" : undefined}
                                 placeholder={c.field === "name" ? "e.g. Wealthsimple Managed" : c.field === "invested" ? "optional" : undefined}
+                                autoFocus={highlight === "balance" && c.field === "name" && i === balances.length - 1 && !b.name}
                                 value={b[c.field]}
                                 maxLength={c.field === "currency" ? 3 : c.field === "name" ? 60 : 20}
                                 onChange={(e) => set(c.field, e.target.value)}

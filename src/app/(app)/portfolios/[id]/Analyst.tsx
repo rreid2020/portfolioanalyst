@@ -6,7 +6,7 @@ import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from 
 import { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Card } from "@/components/ui";
+import { AiBadge, Card } from "@/components/ui";
 import { DEFAULT_QUESTION, MODELS, toolLabel } from "@/lib/analyst-shared";
 import { filename, stamp, toHtml, toMarkdown, type ChatTurn } from "@/lib/report";
 import Link from "next/link";
@@ -44,6 +44,17 @@ function Lookups({ message, live }: { message: Message; live: boolean }) {
         );
       })}
     </div>
+  );
+}
+
+/** Says plainly that what follows is written by an AI model, and what that means. */
+function AiNotice({ model }: { model?: string }) {
+  return (
+    <p className="mb-3 rounded-md bg-violet-50 px-3 py-2 text-xs text-violet-900 ring-1 ring-inset ring-violet-200">
+      <strong className="font-semibold">AI-generated.</strong> {model ? `Written by ${model}` : "Reports are written by an AI model you choose"} from your portfolio&rsquo;s
+      figures and its own lookups of fundamentals, ratings and news. It can be wrong or out of date: check anything important before acting.
+      Informational only, not financial advice.
+    </p>
   );
 }
 
@@ -123,12 +134,13 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
 
   if (!messages.length)
     return (
-      <Card title="Ask the analyst">
+      <Card title={<span className="flex items-center gap-2">Ask the analyst <AiBadge /></span>}>
         <div className="space-y-4 px-4 py-4">
           <p className="text-sm text-slate-600">
             The analyst reviews this portfolio&rsquo;s live figures, backtest, dividends and account placement in {base}, looks up
-            fundamentals, analyst ratings and news, and writes a report with recommendations. Informational only, not financial advice.
+            fundamentals, analyst ratings and news, and writes a report with recommendations.
           </p>
+          <AiNotice />
           <label className="block">
             <span className="text-xs font-medium text-slate-600">What should the analyst focus on?</span>
             <textarea className="input mt-1 block min-h-24 w-full" maxLength={2000} value={question} onChange={(e) => setQuestion(e.target.value)} />
@@ -156,7 +168,7 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
   return (
     <div className="space-y-4">
       <Card
-        title="Analyst report"
+        title={<span className="flex items-center gap-2">Analyst report <AiBadge /></span>}
         action={
           <div className="flex flex-wrap items-center gap-2">
             {!busy && report && (
@@ -174,6 +186,7 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
             {reportMeta.created} · {modelLabel(model)} · figures in {run.base}
             {focus && textOf(focus) !== DEFAULT_QUESTION && <> · Focus: {textOf(focus)}</>}
           </p>
+          <AiNotice model={modelLabel(model)} />
           {first ? (
             <>
               <Lookups message={first} live={busy && !rest.length} />
@@ -186,7 +199,7 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
       </Card>
 
       {(rest.length > 0 || (first && !busy)) && (
-        <Card title="Follow-up questions">
+        <Card title={<span className="flex items-center gap-2">Follow-up questions <AiBadge /></span>}>
           <div className="space-y-4 px-4 py-4">
             {rest.map((m, i) =>
               m.role === "user" ? (

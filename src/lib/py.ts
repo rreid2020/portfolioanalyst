@@ -63,6 +63,16 @@ export async function py<T>(path: string, body?: unknown): Promise<T> {
   return (await pyClient())<T>(path, body);
 }
 
+// /meta never changes within a deployment, so each server instance asks once.
+let meta: Promise<Meta> | null = null;
+export function pyMeta(): Promise<Meta> {
+  meta ??= py<Meta>("/meta").catch((e) => {
+    meta = null; // try again next time
+    throw e;
+  });
+  return meta;
+}
+
 export type Base = "CAD" | "USD";
 
 export type Position = {

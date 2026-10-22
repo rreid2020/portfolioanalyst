@@ -48,3 +48,13 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "warn" | "
   const cls = tone === "error" ? "bg-red-50 text-red-800 ring-red-200" : tone === "warn" ? "bg-amber-50 text-amber-900 ring-amber-200" : "bg-brand-50 text-brand-700 ring-brand-100";
   return <div className={`rounded-md px-3 py-2 text-sm ring-1 ring-inset ${cls}`}>{children}</div>;
 }
+
+/** Marks features whose content is written by an AI model. */
+export function AiBadge({ className = "" }: { className?: string }) {
+  return (
+    <span className={`inline-flex items-center gap-0.5 rounded bg-violet-50 px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-violet-700 ring-1 ring-inset ring-violet-200 ${className}`} title="Written by an AI model">
+      <svg viewBox="0 0 16 16" className="h-2.5 w-2.5" aria-hidden="true"><path fill="currentColor" d="M8 0l1.8 5.2L15 7l-5.2 1.8L8 14l-1.8-5.2L1 7l5.2-1.8z" /></svg>
+      AI
+    </span>
+  );
+}

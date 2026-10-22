@@ -5,9 +5,10 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
+import { AiBadge } from "@/components/ui";
 import { ALL, SELECTED_COOKIE } from "@/lib/selection";
 
-type Item = { href: string; label: string; active: boolean };
+type Item = { href: string; label: React.ReactNode; active: boolean };
 
 // Dashboard tabs that the sidebar's "Dashboard" link stands for; the others get their own links.
 const DASHBOARD_TABS = ["allocation", "gain-loss", "positions"];
@@ -32,7 +33,9 @@ function Heading({ children }: { children: React.ReactNode }) {
   return <div className="px-3 pb-1 pt-4 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[#7FC7CF]">{children}</div>;
 }
 
-export function Nav({ portfolios, remembered }: { portfolios: { id: number; name: string }[]; remembered?: string }) {
+export function Nav({ portfolios, remembered, brokerage }: {
+  portfolios: { id: number; name: string }[]; remembered?: string; brokerage: boolean; // brokerage: SnapTrade is set up here
+}) {
   const path = usePathname();
   const router = useRouter();
   const params = useSearchParams();
@@ -43,6 +46,9 @@ export function Nav({ portfolios, remembered }: { portfolios: { id: number; name
   const onPortfolio = current != null && opened === current.id;
   const editing = onPortfolio && path.endsWith("/edit");
   const base = current ? `/portfolios/${current.id}` : "";
+  // Adding holdings happens in the editor of the portfolio being viewed, or of a new one.
+  const editor = current && current.id !== ALL ? `${base}/edit` : "/portfolios/new";
+  const action = path === editor ? (params.get("add") ?? (params.has("brokerage") ? "brokerage" : null)) : null;
 
   // Remember the portfolio being viewed, so the sidebar's links come back to it from other pages.
   useEffect(() => {
@@ -78,11 +84,17 @@ export function Nav({ portfolios, remembered }: { portfolios: { id: number; name
           )}
           <NavLink href={base} label="Dashboard" active={onPortfolio && !editing && DASHBOARD_TABS.includes(tab)} />
           {VIEWS.map((v) => (
-            <NavLink key={v.tab} href={`${base}?tab=${v.tab}`} label={v.label} active={onPortfolio && !editing && tab === v.tab} />
+            <NavLink key={v.tab} href={`${base}?tab=${v.tab}`} active={onPortfolio && !editing && tab === v.tab}
+              label={v.tab === "analyst" ? <span className="flex items-center gap-2">{v.label}<AiBadge /></span> : v.label} />
           ))}
-          {current.id !== ALL && <NavLink href={`${base}/edit`} label="Holdings" active={editing} />}
+          {current.id !== ALL && <NavLink href={`${base}/edit`} label="Edit holdings" active={editing && !action} />}
         </>
       )}
+
+      <Heading>Add holdings</Heading>
+      <NavLink href={`${editor}?add=import`} label="Import a file" active={action === "import"} />
+      {brokerage && <NavLink href={`${editor}?brokerage=open`} label="Load from brokerage" active={action === "brokerage"} />}
+      <NavLink href={`${editor}?add=balance`} label="Add a balance" active={action === "balance"} />
     </nav>
   );
 }

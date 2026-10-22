@@ -1,6 +1,7 @@
 "use client";
 // Connect a brokerage through SnapTrade and load its holdings into the editor. The connection is saved for
 // the signed-in user (brokerage_store.py), so later visits can refresh without signing in to the broker again.
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 type Status = { configured: boolean; personal?: boolean; connected: boolean; connectedAt?: string | null };
@@ -20,13 +21,14 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export function useBrokerage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [open, setOpen] = useState(false);
+  // ?brokerage=… : back from SnapTrade's portal, or the sidebar's "Load from brokerage".
+  const asked = useSearchParams().has(RETURN_PARAM);
   useEffect(() => {
-    const returned = new URLSearchParams(window.location.search).has(RETURN_PARAM);
-    call<Status>("").then((s) => {
-      setStatus(s);
-      if (returned && s.configured) setOpen(true);
-    }).catch(() => setStatus({ configured: false, connected: false }));
+    call<Status>("").then(setStatus).catch(() => setStatus({ configured: false, connected: false }));
   }, []);
+  useEffect(() => {
+    if (asked && status?.configured) setOpen(true);
+  }, [asked, status?.configured]);
   return { status, setStatus, open, setOpen };
 }
 

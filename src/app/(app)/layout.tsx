@@ -19,6 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const guideCookie = jar.get("pf_guide")?.value;
   const setupDone = guide.steps.filter((s) => !s.monthly).every((s) => s.status === "done" || s.status === "skipped");
   const nav = portfolios.map((p) => ({ id: p.id, name: p.name }));
+  const brokerageAvailable = Boolean(process.env.SNAPTRADE_CLIENT_ID && process.env.SNAPTRADE_CONSUMER_KEY);
 
   return (
     <GuideProvider initialOpen={guideCookie ? guideCookie === "open" : !setupDone}>
@@ -33,7 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               </span>
             </Link>
           </div>
-          <Suspense><Nav portfolios={nav} remembered={jar.get(SELECTED_COOKIE)?.value} /></Suspense>
+          <Suspense><Nav portfolios={nav} remembered={jar.get(SELECTED_COOKIE)?.value} brokerage={brokerageAvailable} /></Suspense>
           <div className="mt-auto flex items-center gap-3 px-5 pt-4 text-xs text-brand-100/80">
             <UserButton />
             <div className="min-w-0">
