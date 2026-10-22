@@ -3,7 +3,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { migrateDb } from "@/db";
 import {
-  countPortfolios, deletePortfolio, listPortfolios, loadPortfolio, nameTaken, PortfolioNameError, renamePortfolio, savePortfolio, touchUser,
+  countPortfolios, deletePortfolio, listPortfolios, loadAllPortfolios, loadPortfolio, nameTaken, PortfolioNameError, renamePortfolio, savePortfolio, touchUser,
   updatePortfolio,
   type Holding,
 } from "@/lib/portfolios";
@@ -88,6 +88,18 @@ describe("saved portfolios", () => {
     expect((await loadPortfolio(ALICE, id))?.holdings).toHaveLength(1);
     expect(await nameTaken(ALICE, " Edited ")).toBe(true);
     expect(await nameTaken(BOB, "Edited")).toBe(false);
+  });
+
+  it("combines every portfolio's holdings for the all-portfolios view", async () => {
+    const carol = "user_carol";
+    await touchUser(carol, null, null);
+    expect(await loadAllPortfolios(carol)).toEqual({ portfolios: 0, updatedAt: null, holdings: [] });
+    await savePortfolio(carol, "TFSA", [HOLDINGS[0]]);
+    await savePortfolio(carol, "RRSP", [HOLDINGS[1], HOLDINGS[3]]);
+    const all = await loadAllPortfolios(carol);
+    expect(all.portfolios).toBe(2);
+    expect(all.holdings.map((h) => h.ticker)).toEqual(["SHOP.TO", "XEQT.TO", "AAPL"]); // newest portfolio first, in saved order
+    expect((await loadAllPortfolios(BOB)).portfolios).toBe((await listPortfolios(BOB)).length); // only Bob's own
   });
 
   it("names are validated", async () => {

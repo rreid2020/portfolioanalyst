@@ -146,6 +146,25 @@ export async function loadPortfolio(userId: string, id: number) {
   return { ...portfolio, holdings: rows as Holding[] };
 }
 
+/** Every holding in all the user's portfolios, for the combined view; newest portfolio first. */
+export async function loadAllPortfolios(userId: string) {
+  need(userId);
+  const rows = await db
+    .select({
+      portfolioId: portfolios.id, updatedAt: portfolios.updatedAt,
+      ticker: holdings.ticker, shares: holdings.shares, avgBuyPrice: holdings.avgPrice, currency: holdings.currency, account: holdings.account,
+    })
+    .from(portfolios)
+    .innerJoin(holdings, eq(holdings.portfolioId, portfolios.id))
+    .where(eq(portfolios.userId, userId))
+    .orderBy(desc(portfolios.updatedAt), desc(portfolios.id), asc(holdings.position));
+  return {
+    portfolios: new Set(rows.map((r) => r.portfolioId)).size,
+    updatedAt: rows[0]?.updatedAt ?? null,
+    holdings: rows.map(({ ticker, shares, avgBuyPrice, currency, account }) => ({ ticker, shares, avgBuyPrice, currency, account })) as Holding[],
+  };
+}
+
 export async function renamePortfolio(userId: string, id: number, newName: string): Promise<boolean> {
   need(userId);
   const valid = validName(newName);

@@ -1,12 +1,12 @@
 // Saved AI analyst runs, one user's at a time, like portfolios.ts. A run belongs to a portfolio;
 // deleting the portfolio deletes its runs.
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { db, schema } from "@/db";
 
 const { analyses, portfolios } = schema;
 
 export type Analysis = {
-  id: number; portfolioId: number; model: string; base: string; prompt: string; messages: unknown[]; createdAt: string; updatedAt: string;
+  id: number; portfolioId: number | null; model: string; base: string; prompt: string; messages: unknown[]; createdAt: string; updatedAt: string;
 };
 
 const columns = {
@@ -14,12 +14,14 @@ const columns = {
   messages: analyses.messages, createdAt: analyses.createdAt, updatedAt: analyses.updatedAt,
 };
 
-/** Start a run for one of the user's portfolios; null if the portfolio isn't theirs. */
+/** Start a run for one of the user's portfolios (null: all of them combined); null if the portfolio isn't theirs. */
 export async function createAnalysis(
-  userId: string, portfolioId: number, run: { model: string; base: string; prompt: string; messages: unknown[] },
+  userId: string, portfolioId: number | null, run: { model: string; base: string; prompt: string; messages: unknown[] },
 ): Promise<number | null> {
-  const [mine] = await db.select({ id: portfolios.id }).from(portfolios).where(and(eq(portfolios.id, portfolioId), eq(portfolios.userId, userId)));
-  if (!mine) return null;
+  if (portfolioId != null) {
+    const [mine] = await db.select({ id: portfolios.id }).from(portfolios).where(and(eq(portfolios.id, portfolioId), eq(portfolios.userId, userId)));
+    if (!mine) return null;
+  }
   const at = new Date().toISOString();
   const [{ id }] = await db
     .insert(analyses)
@@ -34,12 +36,12 @@ export async function getAnalysis(userId: string, id: number): Promise<Analysis 
   return row ?? null;
 }
 
-/** The portfolio's most recent run, to show when its Analyst tab opens. */
-export async function latestAnalysis(userId: string, portfolioId: number): Promise<Analysis | null> {
+/** The portfolio's (or, for null, the combined view's) most recent run, to show when its Analyst tab opens. */
+export async function latestAnalysis(userId: string, portfolioId: number | null): Promise<Analysis | null> {
   const [row] = await db
     .select(columns)
     .from(analyses)
-    .where(and(eq(analyses.portfolioId, portfolioId), eq(analyses.userId, userId)))
+    .where(and(portfolioId == null ? isNull(analyses.portfolioId) : eq(analyses.portfolioId, portfolioId), eq(analyses.userId, userId)))
     .orderBy(desc(analyses.updatedAt), desc(analyses.id))
     .limit(1);
   return row ?? null;

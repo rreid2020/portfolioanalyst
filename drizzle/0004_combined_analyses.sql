@@ -1,0 +1,1 @@
+ALTER TABLE "analyses" ALTER COLUMN "portfolio_id" DROP NOT NULL;

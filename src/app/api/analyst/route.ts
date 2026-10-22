@@ -8,7 +8,7 @@ import { z } from "zod";
 import { createAnalysis, getAnalysis, saveMessages } from "@/lib/analyses";
 import { analystTools, INSTRUCTIONS } from "@/lib/analyst";
 import { DEFAULT_QUESTION, MODELS } from "@/lib/analyst-shared";
-import { loadPortfolio } from "@/lib/portfolios";
+import { loadAllPortfolios, loadPortfolio } from "@/lib/portfolios";
 import { pyClient, PyError } from "@/lib/py";
 
 export const maxDuration = 300;
@@ -17,7 +17,7 @@ const MAX_STEPS = 12; // tool calls plus the final answer
 
 const Body = z.object({
   messages: z.array(z.custom<UIMessage>((m) => typeof m === "object" && m !== null && "role" in m && "parts" in m)).min(1).max(100),
-  portfolioId: z.number().int(),
+  portfolioId: z.number().int().nullable(), // null: all portfolios combined
   analysisId: z.number().int().optional(),
   model: z.enum(MODELS.map((m) => m.id) as [string, ...string[]]),
   base: z.enum(["CAD", "USD"]),
@@ -57,8 +57,9 @@ export async function POST(req: Request) {
       if (!saved || saved.portfolioId !== body.portfolioId) return fail(404, "That analysis no longer exists.");
       prompt = saved.prompt;
     } else {
-      const portfolio = await loadPortfolio(userId, body.portfolioId);
+      const portfolio = body.portfolioId == null ? { id: null, ...(await loadAllPortfolios(userId)) } : await loadPortfolio(userId, body.portfolioId);
       if (!portfolio) return fail(404, "That portfolio no longer exists.");
+      if (!portfolio.holdings.length) return fail(422, "Add some holdings first.");
       ({ prompt } = await call<{ prompt: string }>("/prompt", {
         holdings: portfolio.holdings,
         base: body.base,

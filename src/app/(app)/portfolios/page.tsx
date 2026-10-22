@@ -13,7 +13,12 @@ export default async function PortfoliosPage() {
       <PageHeader
         title="Portfolios"
         subtitle="Your saved portfolios. Open one to see live values, performance and the analyst."
-        actions={<Link href="/portfolios/new" className="btn">New portfolio</Link>}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {saved.length > 1 && <Link href="/portfolios/all" className="btn btn-secondary">View all combined</Link>}
+            <Link href="/portfolios/new" className="btn">New portfolio</Link>
+          </div>
+        }
       />
       <Card>
         {saved.length === 0 ? (

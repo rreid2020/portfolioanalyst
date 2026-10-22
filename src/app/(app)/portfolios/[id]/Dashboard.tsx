@@ -5,6 +5,7 @@ import { Card, Empty, Notice, PageHeader, Stat } from "@/components/ui";
 import type { Holding } from "@/lib/portfolios";
 import { py, PyError, type Analytics, type Base, type Figures, type Meta } from "@/lib/py";
 import { date, money, pct } from "@/lib/format";
+import { ALL } from "@/lib/selection";
 import {
   AccountsView, AllocationView, ALLOCATION_VIEWS, AnalyticsSkeleton, DividendsView, GainLossView, PerformanceView, PositionsView,
 } from "./views";
@@ -24,7 +25,8 @@ const TABS = [
 type Tab = (typeof TABS)[number]["key"];
 const ANALYTICS_TABS: Tab[] = ["accounts", "performance", "dividends"];
 
-export type Portfolio = { id: number; name: string; updatedAt: string; holdings: Holding[] };
+/** A saved portfolio, or (id null) all of them combined, with how many went into it. */
+export type Portfolio = { id: number | null; name: string; updatedAt: string; holdings: Holding[]; combined?: number };
 export type Search = { tab?: string; base?: string; view?: string; period?: string; benchmark?: string; rebalance?: string };
 
 /** The Rebalance tab's settings, passed to the Analyst tab in the URL; anything malformed is ignored. */
@@ -62,14 +64,16 @@ async function AnalyticsTab({ tab, holdings, figures, meta, period, benchmark, h
 }
 
 /** A saved portfolio's live dashboard: header, totals, and the tab chosen in `search`. */
-export async function Dashboard({ portfolio, search, analysis = null, path = `/portfolios/${portfolio.id}` }: {
+export async function Dashboard({ portfolio, search, analysis = null, path = `/portfolios/${portfolio.id ?? ALL}` }: {
   portfolio: Portfolio; search: Search; analysis?: SavedAnalysis | null; path?: string;
 }) {
 
   const base: Base = search.base === "USD" ? "USD" : "CAD";
   const tab: Tab = TABS.some((t) => t.key === search.tab) ? (search.tab as Tab) : "allocation";
   const view = ALLOCATION_VIEWS.find((v) => v === search.view) ?? "Holding";
-  const editHref = `/portfolios/${portfolio.id}/edit`;
+  // The combined view has no holdings of its own to edit; its links go to the portfolio list instead.
+  const editHref = portfolio.id == null ? "/portfolios" : `/portfolios/${portfolio.id}/edit`;
+  const holdingsCount = `${portfolio.holdings.length} holding${portfolio.holdings.length === 1 ? "" : "s"}`;
   const current = { tab, base, view, period: search.period ?? "", benchmark: search.benchmark ?? "" };
   const href = (changes: Record<string, string>) => {
     const q = new URLSearchParams(Object.entries({ ...current, ...changes }).filter(([, v]) => v) as [string, string][]);
@@ -91,11 +95,13 @@ export async function Dashboard({ portfolio, search, analysis = null, path = `/p
     <div className="mx-auto max-w-7xl">
       <PageHeader
         title={portfolio.name}
-        subtitle={`Saved ${date(portfolio.updatedAt)} · ${portfolio.holdings.length} holding${portfolio.holdings.length === 1 ? "" : "s"}`}
+        subtitle={portfolio.id == null
+          ? `Combined from ${portfolio.combined ?? 0} portfolio${portfolio.combined === 1 ? "" : "s"} · ${holdingsCount}`
+          : `Saved ${date(portfolio.updatedAt)} · ${holdingsCount}`}
         back={{ href: "/portfolios", label: "Portfolios" }}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Link href={editHref} className="btn btn-secondary">Edit holdings</Link>
+            {portfolio.id != null && <Link href={editHref} className="btn btn-secondary">Edit holdings</Link>}
             <div className="flex rounded-md border border-slate-300 bg-white p-0.5 text-xs font-medium" role="group" aria-label="Report currency">
               {(["CAD", "USD"] as Base[]).map((b) => (
                 <Link key={b} href={href({ base: b })} scroll={false} aria-current={b === base}
@@ -108,7 +114,9 @@ export async function Dashboard({ portfolio, search, analysis = null, path = `/p
         }
       />
 
-      {!portfolio.holdings.length && <Card><Empty>This portfolio has no holdings yet. <Link href={editHref} className="underline">Add some</Link>.</Empty></Card>}
+      {!portfolio.holdings.length && (
+        <Card><Empty>{portfolio.id == null ? "None of your portfolios has holdings yet." : "This portfolio has no holdings yet."} <Link href={portfolio.id == null ? "/portfolios/new" : editHref} className="underline">Add some</Link>.</Empty></Card>
+      )}
       {error && <Notice tone="error">Couldn&rsquo;t get live prices: {error}</Notice>}
 
       {figures && t && meta && (

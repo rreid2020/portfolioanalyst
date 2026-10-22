@@ -55,7 +55,8 @@ function download(name: string, type: string, content: string) {
 }
 
 export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance, withoutRebalance }: {
-  portfolioId: number; base: string; period: string; benchmark: string; saved: SavedAnalysis | null;
+  /** null: all portfolios combined */
+  portfolioId: number | null; base: string; period: string; benchmark: string; saved: SavedAnalysis | null;
   /** A plan from the Rebalance tab for a new run to comment on; `withoutRebalance` is this tab without it. */
   rebalance: RebalanceOptions | null; withoutRebalance: string;
 }) {
@@ -80,7 +81,7 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
     [portfolioId, period, benchmark, rebalance],
   );
   const { messages, sendMessage, status, error, stop, regenerate, setMessages } = useChat<Message>({
-    id: `analysis-${portfolioId}-${run.key}`,
+    id: `analysis-${portfolioId ?? "all"}-${run.key}`,
     messages: (saved && run.analysisId === saved.id ? saved.messages : []) as Message[],
     transport,
     onFinish: ({ message }) => {

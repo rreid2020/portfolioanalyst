@@ -44,7 +44,8 @@ export const analyses = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
     userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    portfolioId: bigint("portfolio_id", { mode: "number" }).notNull().references(() => portfolios.id, { onDelete: "cascade" }),
+    // null: a run on all the user's portfolios combined
+    portfolioId: bigint("portfolio_id", { mode: "number" }).references(() => portfolios.id, { onDelete: "cascade" }),
     model: text("model").notNull(),
     base: text("base").notNull(),
     prompt: text("prompt").notNull(),

@@ -5,6 +5,7 @@ import { UserButton } from "@clerk/nextjs";
 import { Mark } from "@/components/AuthShell";
 import { GuideButton, GuidePanel, GuideProvider } from "@/components/Guide";
 import { Nav } from "@/components/Nav";
+import { SELECTED_COOKIE } from "@/lib/selection";
 import { guideFor } from "@/lib/guide-facts";
 import { listPortfolios } from "@/lib/portfolios";
 import { requireUserProfile } from "@/lib/user";
@@ -32,7 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               </span>
             </Link>
           </div>
-          <Suspense><Nav portfolios={nav} /></Suspense>
+          <Suspense><Nav portfolios={nav} remembered={jar.get(SELECTED_COOKIE)?.value} /></Suspense>
           <div className="mt-auto flex items-center gap-3 px-5 pt-4 text-xs text-brand-100/80">
             <UserButton />
             <div className="min-w-0">

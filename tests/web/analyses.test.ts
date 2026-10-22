@@ -29,6 +29,13 @@ describe("analyses", () => {
     expect(await latestAnalysis(BOB, portfolioId)).toBeNull();
   });
 
+  it("keeps combined-view runs apart from single-portfolio ones", async () => {
+    const combined = (await createAnalysis(ALICE, null, run))!;
+    expect((await latestAnalysis(ALICE, null))?.id).toBe(combined);
+    expect((await latestAnalysis(ALICE, portfolioId))?.id).not.toBe(combined);
+    expect(await latestAnalysis(BOB, null)).toBeNull();
+  });
+
   it("shows the newest run, and goes with its portfolio", async () => {
     await createAnalysis(ALICE, portfolioId, run);
     const newest = await createAnalysis(ALICE, portfolioId, { ...run, model: "openai/gpt-5-mini" });
