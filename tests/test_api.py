@@ -411,6 +411,9 @@ class ClerkSessionTest(unittest.TestCase):
             ok = self.get_private(headers={"Authorization": f"Bearer {self.token()}"})
             other = self.get_private(headers={"Authorization": f"Bearer {self.token(iss='https://clerk.elsewhere.test')}"})
         self.assertEqual((ok.status_code, other.status_code), (200, 401))
+        # The publishable key wins over a stale CLERK_ISSUER_URL from the Streamlit app.
+        with clean_env(CLERK_JWT_KEY=self.PUBLIC_PEM, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=key, CLERK_ISSUER_URL="https://old.example.test"):
+            self.assertEqual(self.get_private(headers={"Authorization": f"Bearer {self.token()}"}).status_code, 200)
 
     def test_authorized_parties(self):
         with self.configured(CLERK_AUTHORIZED_PARTIES="https://portfolio.example.test/, http://localhost:3000"):

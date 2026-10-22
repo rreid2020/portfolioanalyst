@@ -10,8 +10,8 @@ Environment variables:
                            verifies without a network call
   CLERK_ISSUER_URL         the Frontend API URL, e.g. https://clerk.axiomft.ca; used to
                            fetch the JWKS when CLERK_JWT_KEY isn't set, and checked as `iss`.
-                           When unset it is read from NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
-                           which encodes it, so the Next.js app's keys are enough.
+                           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY encodes it and takes precedence,
+                           so the Next.js app's keys are enough.
   CLERK_AUTHORIZED_PARTIES optional, comma-separated origins allowed in `azp`,
                            e.g. https://portfolio.axiomft.ca,http://localhost:3000
 
@@ -59,7 +59,9 @@ def issuer_from_publishable_key(key: str | None) -> str | None:
 
 
 def _issuer() -> str | None:
-    issuer = os.getenv("CLERK_ISSUER_URL") or issuer_from_publishable_key(os.getenv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"))
+    # The publishable key names the instance the Next.js app signs users in with, so it wins over
+    # CLERK_ISSUER_URL, which the Streamlit app's OAuth sign-in also set on production.
+    issuer = issuer_from_publishable_key(os.getenv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY")) or os.getenv("CLERK_ISSUER_URL")
     return issuer.rstrip("/") if issuer else None
 
 

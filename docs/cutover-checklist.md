@@ -93,7 +93,7 @@ Do these in order, after section B passes.
 | # | Do | Notes |
 |---|---|---|
 | C1 | Add for **Production**: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (`pk_test_dGVuZGVyLWNvbGxpZS01NTMwLmNsZXJrLmFjY291bnRzLmRldiQ`), `CLERK_SECRET_KEY` (the same `sk_test_…`), `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`. | The Streamlit app ignores these, so adding them early is harmless. |
-| C2 | Check Production's existing `CLERK_ISSUER_URL` is `https://tender-collie-5530.clerk.accounts.dev` (the instance in that publishable key). If it's anything else, delete it: the Python API then reads the issuer from the publishable key. Optionally add `CLERK_AUTHORIZED_PARTIES=https://portfolioanalyst-rho.vercel.app`. | The Python API checks session tokens against this issuer; a mismatch makes every data panel answer 401. |
+| C2 | Nothing to do for `CLERK_ISSUER_URL`: the Python API now takes the Clerk instance from the publishable key, so the Streamlit-era value can't get in the way (delete it in D2). Optionally add `CLERK_AUTHORIZED_PARTIES=https://portfolioanalyst-rho.vercel.app`. | |
 | C3 | Merge `nextjs-migration` into `main` (I can open the pull request). | Vercel builds production: runs the database migrations (no-ops now; the tables already exist), builds Next.js, deploys the Python API. |
 | C4 | In Vercel → Settings → Build and Deployment, set **Framework Preset** to **Next.js**. | `vercel.json` already overrides it per build; this makes the setting match. |
 | C5 | Smoke-test https://portfolioanalyst-rho.vercel.app: sign in, open a portfolio, Performance tab, one analyst run. | Repeat B2, B3, B5, B14, B17 against production. |
@@ -105,7 +105,7 @@ Things that stay the same: `DATABASE_URL` and the other Neon variables, `AI_GATE
 ## D. Clean up (about a week after C5)
 
 - [ ] D1. Delete the Clerk **OAuth application** the Streamlit app used (Clerk dashboard → Configure → OAuth applications).
-- [ ] D2. Remove Production env vars `CLERK_OAUTH_CLIENT_ID` and `CLERK_OAUTH_CLIENT_SECRET`.
+- [ ] D2. Remove Production env vars `CLERK_OAUTH_CLIENT_ID`, `CLERK_OAUTH_CLIENT_SECRET` and `CLERK_ISSUER_URL`.
 - [ ] D3. Remove the Streamlit code (I can do this as one PR): `main.py`, `asgi.py`, `dashboard.py`, `access.py`, `auth_config.py`, `branding.py`, `report.py`, `requirements-streamlit.txt`, `.streamlit/`, and the `AppTest` UI tests in `tests/` (their pure-logic tests stay). Update the README's Streamlit sections.
 - [ ] D4. Clean old Streamlit-session SnapTrade users: already automatic (abandoned ones are deleted on the next connect).
 
