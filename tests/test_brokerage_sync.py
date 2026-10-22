@@ -158,6 +158,11 @@ class FetchHoldingsTest(unittest.TestCase):
         self.assertFalse(api.find("GET", f"/accounts/{ACCT_PAPER}/positions/all"))
         self.assertTrue(any("Questrade connection is disabled" in w for w in warnings))
         self.assertTrue(any("1 mutualfund" in w for w in warnings))
+        # Every listed account is accounted for, so a missing one can be explained.
+        (read,) = [w for w in warnings if w.startswith("Accounts read: ")]
+        self.assertIn("→ TFSA: 2 stock/ETF position(s)", read)
+        self.assertIn("My Spousal RRSP ••1234 → RRSP", read)
+        self.assertIn("skipped, a paper account", read)
         # Commercial keys send the SnapTrade user on every account call.
         for request in api.find("GET", "/positions/all"):
             self.assertEqual(request["query"]["userId"], USER["user_id"])

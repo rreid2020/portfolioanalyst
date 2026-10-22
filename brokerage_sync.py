@@ -179,6 +179,13 @@ def account_type(account) -> str:
     return account_type
 
 
+def account_description(account) -> str:
+    """'TFSA ••1234' from the account's own name (or raw type) and masked number, for messages."""
+    name = _text(account.get("display_name")) or _text(account.get("raw_type")) or "Account"
+    number = _text(account.get("masked_account_number")).lstrip("*")
+    return f"{name} ••{number}" if number else name
+
+
 def positions_to_holdings(positions):
     """Merge SnapTrade positions into a DataFrame with COLUMNS plus warning strings.
 
@@ -246,6 +253,7 @@ def fetch_holdings(client: SnapTrade, user):
 
     warnings = []
     positions = []
+    report = []  # one line per account the brokerage listed, so a missing account can be explained
     account_count = 0
     for connection in connections:
         name = _text((connection.get("brokerage") or {}).get("display_name")) or _text(connection.get("name"))
@@ -255,20 +263,28 @@ def fetch_holdings(client: SnapTrade, user):
             connection_id=str(connection["id"]), **auth
         ).body["results"]
         for account in accounts:
-            if _text(account.get("kind")) != "investment" or account.get("is_paper"):
+            described = account_description(account)
+            kind = _text(account.get("kind"))
+            if kind != "investment":
+                report.append(f"{described}: skipped, a {kind or 'non-investment'} account")
+                continue
+            if account.get("is_paper"):
+                report.append(f"{described}: skipped, a paper account")
                 continue
             account_count += 1
             label = account_type(account)
-            positions.extend(
-                {**position, "account": label}
-                for position in client.account_information.get_all_account_positions(
-                    account_id=str(account["id"]), **auth
-                ).body["results"]
+            found = client.account_information.get_all_account_positions(account_id=str(account["id"]), **auth).body["results"]
+            usable = sum(1 for position in found if _text((position.get("instrument") or {}).get("kind")) in SUPPORTED_KINDS)
+            report.append(
+                f"{described} → {label or 'no account type'}: {usable} stock/ETF position(s)"
+                + (f", {len(found) - usable} other" if len(found) > usable else "")
             )
+            positions.extend({**position, "account": label} for position in found)
 
     if not account_count:
-        raise ValueError("The connected brokerage has no investment accounts yet. If you just connected, try again in a minute.")
+        raise ValueError("The connected brokerage has no investment accounts yet. If you just connected, try again in a minute. " + "; ".join(report))
     holdings, position_warnings = positions_to_holdings(positions)
     if holdings.empty:
-        raise ValueError(f"Found {account_count} account(s) but no stock or ETF positions. {' '.join(position_warnings)}".strip())
+        raise ValueError(f"Found {account_count} account(s) but no stock or ETF positions. {' '.join(position_warnings)} " + "; ".join(report))
+    warnings.append("Accounts read: " + "; ".join(report) + ".")
     return holdings, [*warnings, *position_warnings]
