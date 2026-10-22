@@ -57,7 +57,7 @@ export function Nav({ portfolios }: { portfolios: { id: number; name: string }[]
               {portfolios.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           ) : (
-            <div className="truncate px-3 pb-1 text-sm font-medium text-white" title={current.name}>{current.name}</div>
+            <Link href={base} className="truncate rounded-md px-3 py-1.5 text-sm font-medium text-white hover:bg-white/5" title={current.name}>{current.name}</Link>
           )}
           <NavLink href={base} label="Dashboard" active={onPortfolio && !editing && DASHBOARD_TABS.includes(tab)} />
           {VIEWS.map((v) => (
