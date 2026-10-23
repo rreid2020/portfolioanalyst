@@ -1,9 +1,11 @@
 // The dashboard's tab views. Each takes data already fetched by page.tsx; the analytics-based ones
 // (accounts, performance, dividends) render inside a Suspense boundary because the price history is slow.
 import Link from "next/link";
-import { Card, Empty, Notice, Stat } from "@/components/ui";
+import { Card, Empty, InfoTip, Notice, Stat } from "@/components/ui";
+import { readPerformance, RISK_TIPS } from "@/lib/risk-reading";
 import { DataTable, type Column, type Row } from "@/components/DataTable";
 import type { Analytics, Base, Figures, Meta, Position } from "@/lib/py";
+import { incomeByAccount } from "@/lib/dividends";
 import { date, money, monthYear, num, pct, share, shares } from "@/lib/format";
 import { BarList, CorrelationGrid, fold, type Bar } from "./charts";
 import { PerformanceChart } from "./PerformanceChart";
@@ -194,6 +196,7 @@ export function DividendsView({ analytics, base, balances }: { analytics: Analyt
   const d = analytics.dividends;
   if (!d) return <Card><Empty>No dividend data.</Empty></Card>;
   const payers = d.byTicker.filter((r) => (r.annualIncome ?? 0) > 0);
+  const byAccount = incomeByAccount(d.rows, analytics.accountSummary);
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -217,6 +220,37 @@ export function DividendsView({ analytics, base, balances }: { analytics: Analyt
                 },
               )}
             />
+          </Card>
+          <Card title={`Income by account (${base}/yr)`}>
+            <DataTable
+              label="Income by account"
+              columns={[
+                { key: "account", label: "Account" },
+                { key: "income", label: `Annual income (${base})`, kind: "number", align: "right" },
+                { key: "share", label: "Share of income", kind: "number", align: "right" },
+                { key: "yield", label: "Yield on account value", kind: "number", align: "right" },
+              ]}
+              rows={byAccount.map((a) => ({
+                key: a.account,
+                cells: {
+                  account: { value: a.account, className: "font-medium text-slate-800" },
+                  income: { value: a.income, display: money(a.income, base) },
+                  share: { value: (a.income / d.totalIncome) * 100, display: share((a.income / d.totalIncome) * 100) },
+                  yield: { value: a.yieldPct, display: share(a.yieldPct, 2) },
+                },
+              }))}
+              footer={
+                <tr>
+                  <td>Total</td>
+                  <td className="num">{money(d.totalIncome, base)}</td>
+                  <td className="num">{share(100)}</td>
+                  <td className="num">{share(d.portfolioYield, 2)}</td>
+                </tr>
+              }
+            />
+            <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+              Where the income is earned matters for tax: US dividends lose 15% withholding in a TFSA, and Canadian dividends get the dividend tax credit only outside registered accounts. See Accounts for placement hints.
+            </p>
           </Card>
           <Card title="Dividends by position">
             <DataTable
@@ -270,18 +304,40 @@ export function PerformanceView({ analytics, meta, figures, period, benchmark, h
   return (
     <div className="space-y-4">
       {controls}
+      {/* Tips on the right-hand cards open leftward so they stay on screen in both the 2- and 4-column layouts. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label={`Return (${p.period})`} value={pct(p.portfolioReturn)} sub={vs ?? `Benchmark ${pct(p.benchmarkReturn)}`} tone={p.portfolioReturn >= 0 ? "good" : "bad"} />
-        <Stat label="Volatility" value={share(p.volatility)} sub="Annualized, from daily returns" />
-        <Stat label="Beta" value={num(p.beta, 2)} sub={`Against ${p.benchmarkName}`} />
-        <Stat label="Max drawdown" value={pct(p.maxDrawdown)} sub={`${date(p.drawdownPeak)} to ${date(p.drawdownTrough)}`} tone={p.maxDrawdown < -10 ? "bad" : undefined} />
+        <Stat label={`Return (${p.period})`} value={pct(p.portfolioReturn)} sub={vs ?? `Benchmark ${pct(p.benchmarkReturn)}`} tone={p.portfolioReturn >= 0 ? "good" : "bad"} info={RISK_TIPS.return} />
+        <Stat label="Volatility" value={share(p.volatility)} sub="Annualized, from daily returns" info={RISK_TIPS.volatility} infoAlign="end" />
+        <Stat label="Beta" value={num(p.beta, 2)} sub={`Against ${p.benchmarkName}`} info={RISK_TIPS.beta} />
+        <Stat label="Max drawdown" value={pct(p.maxDrawdown)} sub={`${date(p.drawdownPeak)} to ${date(p.drawdownTrough)}`} tone={p.maxDrawdown < -10 ? "bad" : undefined} info={RISK_TIPS.drawdown} infoAlign="end" />
       </div>
-      <Card title={`Growth vs ${p.benchmarkName}`} action={p.annualizedReturn != null ? <span className="text-xs text-slate-500">Annualized {pct(p.annualizedReturn)}</span> : undefined}>
+      <Card title="What these numbers mean for this portfolio">
+        <dl className="divide-y divide-slate-100 px-4 py-1 text-sm">
+          {readPerformance(p, figures.base).map((r) => (
+            <div key={r.term} className="grid gap-1 py-2.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-4">
+              <dt className="font-medium text-slate-800">{r.term}</dt>
+              <dd className="m-0 leading-relaxed text-slate-600">{r.text}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          Past figures from a backtest. They describe how this mix has behaved, not what it will do next, and they are not advice.
+        </p>
+      </Card>
+      <Card
+        title={`Growth vs ${p.benchmarkName}`}
+        action={p.annualizedReturn != null ? (
+          <span className="flex items-center gap-1.5 text-xs text-slate-500">
+            Annualized {pct(p.annualizedReturn)}
+            <InfoTip id="tip-annualized" label="annualized return" align="end">{RISK_TIPS.annualized}</InfoTip>
+          </span>
+        ) : undefined}
+      >
         <PerformanceChart series={p.series} benchmarkName={p.benchmarkName} />
         <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">{note}</p>
       </Card>
       {p.correlation.tickers.length > 1 && (
-        <Card title="How your holdings move together">
+        <Card title="How your holdings move together" action={<InfoTip id="tip-correlation" label="correlation" align="end">{RISK_TIPS.correlation}</InfoTip>}>
           <p className="px-4 pt-3 text-xs text-slate-500">
             Correlation of daily returns over the period. Near 1, two holdings rise and fall together; near 0 or below, they diversify each other.
             {figures.byTicker.length > MAX_CORRELATION_HOLDINGS && ` Largest ${MAX_CORRELATION_HOLDINGS} holdings shown.`}

@@ -16,11 +16,39 @@ export function Card({ title, action, children, className = "" }: { title?: Reac
   );
 }
 
-export function Stat({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: "good" | "bad" | "warn" }) {
+// An "i" that explains a figure on hover, or on tap/focus (no JS, so it works in server components).
+export function InfoTip({ id, label, children, align = "start" }: { id: string; label: string; children: React.ReactNode; align?: "start" | "end" }) {
+  return (
+    <span className="group relative inline-flex align-middle normal-case tracking-normal">
+      <button
+        type="button"
+        aria-label={`About ${label}`}
+        aria-describedby={id}
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[0.6rem] font-semibold leading-none text-slate-500 hover:border-brand-500 hover:text-brand-600 focus:border-brand-500 focus:text-brand-600 focus:outline-none"
+      >
+        i
+      </button>
+      <span
+        id={id}
+        role="tooltip"
+        className={`invisible absolute top-full z-30 mt-1.5 w-64 rounded-md bg-slate-900 px-3 py-2 text-xs font-normal leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 ${align === "end" ? "right-0" : "left-0"}`}
+      >
+        {children}
+      </span>
+    </span>
+  );
+}
+
+export function Stat({ label, value, sub, tone, info, infoAlign }: {
+  label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: "good" | "bad" | "warn"; info?: React.ReactNode; infoAlign?: "start" | "end";
+}) {
   const color = tone === "bad" ? "text-red-700" : tone === "good" ? "text-emerald-700" : tone === "warn" ? "text-amber-700" : "text-slate-900";
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <div className="text-[0.7rem] font-medium uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="flex items-center gap-1.5 text-[0.7rem] font-medium uppercase tracking-wide text-slate-500">
+        {label}
+        {info && <InfoTip id={`tip-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} label={label} align={infoAlign}>{info}</InfoTip>}
+      </div>
       <div className={`mt-1 text-xl font-semibold tabular-nums ${color}`}>{value}</div>
       {sub && <div className="mt-0.5 text-xs text-slate-500">{sub}</div>}
     </div>
