@@ -7,7 +7,8 @@
  * its 4,000-token output limit can cut a full review short.
  */
 export const MODELS = [
-  { id: "minimax/minimax-m3.1-flash", label: "MiniMax M3.1 Flash" },
+  // Recommended: the strongest of these for multi-step tool use and long reports.
+  { id: "minimax/minimax-m3.1-flash", label: "MiniMax M3.1 Flash", recommended: true },
   { id: "inception/mercury-3", label: "Mercury 3" },
   { id: "nvidia/nemotron-3.5-lightning-free", label: "Nemotron 3.5 Lightning (no credit used)" },
   { id: "inclusionai/ling-3.0-flash", label: "Ling 3.0 Flash" },

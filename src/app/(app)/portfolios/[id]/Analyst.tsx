@@ -157,7 +157,7 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
             <label className="block">
               <span className="text-xs font-medium text-slate-600">Model (via Vercel AI Gateway, free credit)</span>
               <select className="input mt-1 block" value={model} onChange={(e) => setModel(e.target.value)}>
-                {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                {MODELS.map((m) => <option key={m.id} value={m.id}>{"recommended" in m ? `${m.label} (recommended)` : m.label}</option>)}
               </select>
             </label>
             <button type="button" className="btn" onClick={start}>Analyze portfolio</button>
