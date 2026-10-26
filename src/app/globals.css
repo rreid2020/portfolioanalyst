@@ -31,6 +31,8 @@ table.grid-table th.num { text-align: right; }
 table.grid-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
 table.grid-table tbody tr:hover { background: #f8fafc; }
 table.grid-table tfoot td { font-weight: 600; border-top: 2px solid #cbd5e1; background: #f8fafc; }
+/* Wide tables (Positions) trade some cell padding for fitting without a sideways scroll. */
+.compact table.grid-table th, .compact table.grid-table td { padding-left: 0.5rem; padding-right: 0.5rem; }
 .input { border: 1px solid #cbd5e1; border-radius: 0.375rem; padding: 0.35rem 0.55rem; font-size: 0.8125rem; background: white; }
 .input:focus { outline: 2px solid var(--color-brand-500); outline-offset: -1px; }
 .btn { display: inline-flex; align-items: center; gap: 0.35rem; border-radius: 0.375rem; padding: 0.4rem 0.8rem; font-size: 0.8125rem; font-weight: 500; background: var(--color-brand-600); color: white; }

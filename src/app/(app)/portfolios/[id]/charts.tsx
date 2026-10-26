@@ -100,16 +100,16 @@ export function sparkPoints(values: number[], width: number, height: number, pad
     .join(" ");
 }
 
-/** A tiny line of recent closes, in the gain colour if it ended higher than it started, else the loss colour. */
-export function Sparkline({ closes, changePct, period }: { closes: number[]; changePct: number | null; period: string }) {
+/** A tiny line of recent closes, in the gain colour if it ended higher than it started, the loss colour if lower, grey if flat. */
+export function Sparkline({ closes, changePct, period, flat = false }: { closes: number[]; changePct: number | null; period: string; flat?: boolean }) {
   const up = (changePct ?? 0) >= 0;
-  const width = 72;
+  const width = 56;
   const height = 22;
   return (
     <svg
       width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img"
-      aria-label={`${up ? "Up" : "Down"} ${num(Math.abs(changePct ?? 0), 1)}% over ${period}`}
-      className={`inline-block align-middle ${up ? "text-gain" : "text-loss"}`}
+      aria-label={flat ? `Flat over ${period}` : `${up ? "Up" : "Down"} ${num(Math.abs(changePct ?? 0), 1)}% over ${period}`}
+      className={`inline-block align-middle ${flat ? "text-slate-400" : up ? "text-gain" : "text-loss"}`}
     >
       <polyline points={sparkPoints(closes, width, height)} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
     </svg>

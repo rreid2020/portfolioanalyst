@@ -81,8 +81,9 @@ export function Dashboard({ portfolio, search, analysis = null, path = `/portfol
   };
 
   // The header draws at once; everything that needs live prices streams in below it.
+  // Wider than the other pages: the Positions table has a dozen columns.
   return (
-    <div className="mx-auto max-w-7xl">
+    <div className="mx-auto max-w-screen-2xl">
       <PageHeader
         title={portfolio.name}
         subtitle={portfolio.id == null

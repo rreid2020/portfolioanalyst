@@ -7,6 +7,13 @@ import { marketOpen, priceTime } from "@/lib/market-hours";
 
 export const REFRESH_MINUTES = 5; // the API caches quotes for 5 minutes, so sooner gains nothing
 
+/** "Prices as of 10:42 a.m. EDT", for card headers; just "Prices" until the browser has formatted the time. */
+export function PricesAsOf({ iso }: { iso: string | null }) {
+  const [label, setLabel] = useState<string | null>(null);
+  useEffect(() => setLabel(iso ? priceTime(iso) : null), [iso]);
+  return label ? <>Prices as of <span className="font-medium text-slate-700">{label}</span>,</> : <>Prices</>;
+}
+
 export function PriceFreshness({ pricesAsOf, fxNote, autoRefresh }: { pricesAsOf: string | null; fxNote: string; autoRefresh: boolean }) {
   const router = useRouter();
   // Times are formatted in the viewer's time zone, which only the browser knows.
@@ -41,6 +48,12 @@ export function PriceFreshness({ pricesAsOf, fxNote, autoRefresh }: { pricesAsOf
 
   return (
     <p className="mb-4 text-xs text-slate-500">
+      {autoRefresh && open && (
+        <span className="mr-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" aria-hidden="true" />
+          Live
+        </span>
+      )}
       {label ? <>Prices as of <span className="font-medium text-slate-700">{label}</span> from Yahoo Finance, which can be delayed up to 15 minutes.</> : "Yahoo Finance quotes, which can be delayed up to 15 minutes."}
       {autoRefresh && (open ? ` Updates every ${REFRESH_MINUTES} minutes while markets are open.` : " Markets are closed; prices update when they reopen.")}
       {fxNote}

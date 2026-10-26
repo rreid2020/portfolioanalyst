@@ -9,6 +9,7 @@ import { incomeByAccount } from "@/lib/dividends";
 import { date, money, monthYear, num, pct, share, shares } from "@/lib/format";
 import { BarList, CorrelationGrid, fold, Sparkline, type Bar } from "./charts";
 import { PerformanceChart } from "./PerformanceChart";
+import { PricesAsOf } from "./PriceFreshness";
 
 export const ALLOCATION_VIEWS = ["Holding", "Account", "Sector", "Country", "Currency"] as const;
 const MAX_CORRELATION_HOLDINGS = 12;
@@ -69,24 +70,27 @@ export function GainLossView({ figures, editHref }: { figures: Figures; editHref
 const red = (v: number | null | undefined) => (v != null && v < 0 ? "text-red-700" : undefined);
 
 const PERIOD_NAMES: Record<string, string> = { "1mo": "1 month", "3mo": "3 months" };
+const TREND_LABELS: Record<string, string> = { "1 month": "1-mo trend", "3 months": "3-mo trend" };
+// Under 0.05% either way reads as 0.0%, so it is shown as flat rather than as a gain or a loss.
+const FLAT_PCT = 0.05;
 
 function positionColumns(base: string, trendPeriod: string): Column[] {
   return [
     { key: "ticker", label: "Ticker" },
     { key: "account", label: "Account" },
     { key: "name", label: "Name" },
-    { key: "trend", label: `Trend (${trendPeriod})`, kind: "number", align: "right" },
+    { key: "trend", label: "Trend", header: <span title={`Daily closes over ${trendPeriod}`}>{TREND_LABELS[trendPeriod] ?? "Trend"}</span>, kind: "number", align: "right" },
     { key: "shares", label: "Shares", kind: "number", align: "right" },
+    // The price carries its currency (US$ for USD), so there's no separate currency column.
     { key: "price", label: "Price", kind: "number", align: "right" },
-    { key: "currency", label: "Ccy" },
-    { key: "value", label: `Value (${base})`, kind: "number", align: "right" },
-    { key: "cost", label: `Cost (${base})`, kind: "number", align: "right" },
-    { key: "pl", label: `P/L (${base})`, kind: "number", align: "right" },
+    // Amounts are all in the base currency, which the card header states, so the headers leave it out.
+    { key: "value", label: `Value (${base})`, header: "Value", kind: "number", align: "right" },
+    { key: "cost", label: `Cost (${base})`, header: "Cost", kind: "number", align: "right" },
+    { key: "pl", label: `P/L (${base})`, header: "P/L", kind: "number", align: "right" },
     { key: "plPct", label: "P/L %", kind: "number", align: "right" },
-    { key: "dayChange", label: `Today (${base})`, kind: "number", align: "right" },
+    { key: "dayChange", label: `Today (${base})`, header: "Today", kind: "number", align: "right" },
     { key: "weight", label: "Weight", kind: "number", align: "right" },
-    { key: "sector", label: "Sector" },
-    { key: "country", label: "Country" },
+    { key: "sector", label: "Sector / country" },
   ];
 }
 
@@ -99,31 +103,39 @@ function positionRow(p: Position, base: string, trends: Trends | undefined, tren
     cells: {
       ticker: { value: p.ticker, className: "font-medium text-slate-800" },
       account: { value: p.account },
-      name: { value: name, className: "max-w-56 truncate text-slate-600", title: name },
+      name: { value: name, className: "max-w-40 truncate text-slate-600", title: name },
       trend: trend
         ? {
             value: trend.changePct,
             label: pct(trend.changePct, 1),
             title: `${pct(trend.changePct, 1)} over ${trendPeriod}, from daily closes in ${p.currency}`,
             display: (
-              <span className="inline-flex items-center gap-2">
-                <Sparkline closes={trend.closes} changePct={trend.changePct} period={trendPeriod} />
-                <span className={`w-14 tabular-nums ${red(trend.changePct) ?? "text-slate-600"}`}>{pct(trend.changePct, 1)}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <Sparkline closes={trend.closes} changePct={trend.changePct} period={trendPeriod} flat={Math.abs(trend.changePct ?? 0) < FLAT_PCT} />
+                <span className={`w-12 tabular-nums ${Math.abs(trend.changePct ?? 0) < FLAT_PCT ? "text-slate-500" : red(trend.changePct) ?? "text-slate-600"}`}>{pct(trend.changePct, 1)}</span>
               </span>
             ),
           }
-        : { value: null, display: !trends && !p.balanceOnly ? <span className="inline-block h-[22px] w-[72px] animate-pulse rounded bg-slate-100 align-middle" aria-label="Loading trend" /> : "—" },
+        : { value: null, display: !trends && !p.balanceOnly ? <span className="inline-block h-[22px] w-[104px] animate-pulse rounded bg-slate-100 align-middle" aria-label="Loading trend" /> : "—" },
       shares: { value: p.balanceOnly ? null : p.shares, display: p.balanceOnly ? "—" : shares(p.shares) },
       price: { value: p.balanceOnly ? null : p.price, display: p.balanceOnly ? "—" : money(p.price, p.currency) },
-      currency: { value: p.currency },
       value: { value: p.value, display: money(p.value, base) },
       cost: { value: p.cost, display: money(p.cost, base) },
       pl: { value: p.pl, display: money(p.pl, base, { signed: true }), className: red(p.pl) },
       plPct: { value: p.plPct, display: pct(p.plPct, 2) },
       dayChange: { value: p.dayChange, display: money(p.dayChange, base, { signed: true }), className: red(p.dayChange) },
       weight: { value: p.weightPct, display: share(p.weightPct) },
-      sector: { value: p.sector, className: "text-slate-600" },
-      country: { value: p.country, className: "text-slate-600" },
+      sector: {
+        // Funds report "Fund (mixed)" for both; say it once.
+        value: [...new Set([p.sector, p.country].filter(Boolean))].join(" · "),
+        className: "text-slate-600",
+        display: (
+          <span className="block leading-tight">
+            {p.sector}
+            {p.country && p.country !== p.sector && <span className="block text-[0.7rem] text-slate-400">{p.country}</span>}
+          </span>
+        ),
+      },
     },
   };
 }
@@ -132,17 +144,17 @@ export function PositionsView({ figures, trends }: { figures: Figures; trends?: 
   const base = figures.base;
   const trendPeriod = PERIOD_NAMES[trends?.period ?? "1mo"] ?? trends?.period ?? "1 month";
   return (
-    <Card title="Positions" action={<span className="text-xs text-slate-500">Prices in the listing currency; amounts in {base}</span>}>
-      <DataTable label="Positions" columns={positionColumns(base, trendPeriod)} rows={figures.positions.map((p) => positionRow(p, base, trends, trendPeriod))} footer={
+    <Card title="Positions" action={<span className="text-xs text-slate-500"><PricesAsOf iso={figures.pricesAsOf} /> in the listing currency; amounts in <span className="font-medium text-slate-700">{base}</span></span>}>
+      <DataTable className="compact" label="Positions" columns={positionColumns(base, trendPeriod)} rows={figures.positions.map((p) => positionRow(p, base, trends, trendPeriod))} footer={
         <tr>
-          <td colSpan={7}>Total</td>
+          <td colSpan={6}>Total</td>
           <td className="num">{money(figures.totals.value, base)}</td>
           <td className="num">{money(figures.totals.cost, base)}</td>
           <td className="num">{money(figures.totals.pl, base, { signed: true })}</td>
           <td className="num">{pct(figures.totals.plPct, 2)}</td>
           <td className="num">{money(figures.totals.dayChange, base, { signed: true })}</td>
           <td className="num">{share(100)}</td>
-          <td colSpan={2} />
+          <td />
         </tr>
       } />
     </Card>
