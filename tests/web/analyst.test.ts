@@ -38,3 +38,20 @@ describe("analyst tools", () => {
     expect(toolLabel("somethingNew", {})).toBe("somethingNew");
   });
 });
+
+describe("analyst models", () => {
+  it("offers only free-credit models, and labels models older analyses used", async () => {
+    const { MODELS, modelLabel } = await import("@/lib/analyst-shared");
+    expect(MODELS.map((m) => m.id)).not.toContain("anthropic/claude-sonnet-5.5");
+    expect(modelLabel("anthropic/claude-sonnet-5.5")).toBe("Claude Sonnet 5.5");
+    expect(modelLabel("minimax/minimax-m3.1-flash")).toBe("MiniMax M3.1 Flash");
+    expect(modelLabel("someone/unknown")).toBe("someone/unknown");
+  });
+
+  it("continues a saved analysis on its model only while that model is offered", async () => {
+    const { availableModel, MODELS } = await import("@/lib/analyst-shared");
+    expect(availableModel("inception/mercury-3")).toBe("inception/mercury-3");
+    expect(availableModel("anthropic/claude-sonnet-5.5")).toBe(MODELS[0].id);
+    expect(availableModel(undefined)).toBe(MODELS[0].id);
+  });
+});

@@ -8,7 +8,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AiBadge, Card } from "@/components/ui";
 import { MarkdownTable } from "@/components/MarkdownTable";
-import { DEFAULT_QUESTION, MODELS, toolLabel } from "@/lib/analyst-shared";
+import { availableModel, DEFAULT_QUESTION, modelLabel, MODELS, toolLabel } from "@/lib/analyst-shared";
 import { dateTime, money } from "@/lib/format";
 import { filename, toHtml, toMarkdown, type ChatTurn } from "@/lib/report";
 import Link from "next/link";
@@ -73,12 +73,13 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
   /** A plan from the Rebalance tab for a new run to comment on; `withoutRebalance` is this tab without it. */
   rebalance: RebalanceOptions | null; withoutRebalance: string;
 }) {
-  const [model, setModel] = useState<string>(saved?.model ?? MODELS[0].id);
+  const [model, setModel] = useState<string>(availableModel(saved?.model));
   const [question, setQuestion] = useState(DEFAULT_QUESTION);
   const [followUp, setFollowUp] = useState("");
   // A plan sent from the Rebalance tab starts a new run rather than showing the saved one.
-  const [run, setRun] = useState(() => (rebalance ? { key: 0, analysisId: undefined, createdAt: undefined, base }
-    : { key: saved?.id ?? 0, analysisId: saved?.id, createdAt: saved?.createdAt, base: saved?.base ?? base }));
+  // `run.model` is the model that wrote the run, which a saved run keeps even if it is no longer offered.
+  const [run, setRun] = useState<{ key: number; analysisId?: number; createdAt?: string; base: string; model: string }>(() => (rebalance ? { key: 0, analysisId: undefined, createdAt: undefined, base, model }
+    : { key: saved?.id ?? 0, analysisId: saved?.id, createdAt: saved?.createdAt, base: saved?.base ?? base, model: saved?.model ?? model }));
   // The transport reads these when it sends, so they're refs rather than state captured at creation.
   const live = useRef({ analysisId: run.analysisId, model, base: run.base });
   live.current.model = model;
@@ -106,19 +107,18 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
     },
   });
   const busy = status === "submitted" || status === "streaming";
-  const modelLabel = (id: string) => MODELS.find((m) => m.id === id)?.label ?? id;
 
   // Only offered while there are no messages, so the current chat is empty and can take the run.
   function start() {
     live.current = { analysisId: undefined, model, base };
-    setRun((r) => ({ ...r, analysisId: undefined, createdAt: new Date().toISOString(), base }));
+    setRun((r) => ({ ...r, analysisId: undefined, createdAt: new Date().toISOString(), base, model }));
     void sendMessage({ text: question.trim() || DEFAULT_QUESTION });
   }
 
   function newAnalysis() {
     stop();
     live.current = { analysisId: undefined, model, base };
-    setRun({ key: Date.now(), analysisId: undefined, createdAt: undefined, base });
+    setRun({ key: Date.now(), analysisId: undefined, createdAt: undefined, base, model });
     setMessages([]);
   }
 
@@ -130,7 +130,7 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
   }
 
   const [focus, first, ...rest] = messages;
-  const reportMeta = { created: run.createdAt ?? new Date().toISOString(), model, base: run.base };
+  const reportMeta = { created: run.createdAt ?? new Date().toISOString(), model: run.model, base: run.base };
   const chat: ChatTurn[] = rest.map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: textOf(m) }));
   const report = first ? textOf(first) : "";
 
@@ -155,7 +155,7 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
           )}
           <div className="flex flex-wrap items-end gap-3">
             <label className="block">
-              <span className="text-xs font-medium text-slate-600">Model (via Vercel AI Gateway)</span>
+              <span className="text-xs font-medium text-slate-600">Model (via Vercel AI Gateway, free credit)</span>
               <select className="input mt-1 block" value={model} onChange={(e) => setModel(e.target.value)}>
                 {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
               </select>
@@ -185,10 +185,10 @@ export function Analyst({ portfolioId, base, period, benchmark, saved, rebalance
       >
         <div className="px-4 py-4">
           <p className="mb-3 text-xs text-slate-500">
-            {dateTime(reportMeta.created)} · {modelLabel(model)} · figures in {run.base}
+            {dateTime(reportMeta.created)} · {modelLabel(run.model)} · figures in {run.base}
             {focus && textOf(focus) !== DEFAULT_QUESTION && <> · Focus: {textOf(focus)}</>}
           </p>
-          <AiNotice model={modelLabel(model)} />
+          <AiNotice model={modelLabel(run.model)} />
           {first ? (
             <>
               <Lookups message={first} live={busy && !rest.length} />
