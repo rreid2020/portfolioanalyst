@@ -4,10 +4,10 @@ import Link from "next/link";
 import { Card, Empty, InfoTip, Notice, Stat } from "@/components/ui";
 import { readPerformance, RISK_TIPS } from "@/lib/risk-reading";
 import { DataTable, type Column, type Row } from "@/components/DataTable";
-import type { Analytics, Base, Figures, Meta, Position } from "@/lib/py";
+import type { Analytics, Base, Figures, Meta, Position, Trends } from "@/lib/py";
 import { incomeByAccount } from "@/lib/dividends";
 import { date, money, monthYear, num, pct, share, shares } from "@/lib/format";
-import { BarList, CorrelationGrid, fold, type Bar } from "./charts";
+import { BarList, CorrelationGrid, fold, Sparkline, type Bar } from "./charts";
 import { PerformanceChart } from "./PerformanceChart";
 
 export const ALLOCATION_VIEWS = ["Holding", "Account", "Sector", "Country", "Currency"] as const;
@@ -68,11 +68,14 @@ export function GainLossView({ figures, editHref }: { figures: Figures; editHref
 
 const red = (v: number | null | undefined) => (v != null && v < 0 ? "text-red-700" : undefined);
 
-function positionColumns(base: string): Column[] {
+const PERIOD_NAMES: Record<string, string> = { "1mo": "1 month", "3mo": "3 months" };
+
+function positionColumns(base: string, trendPeriod: string): Column[] {
   return [
     { key: "ticker", label: "Ticker" },
     { key: "account", label: "Account" },
     { key: "name", label: "Name" },
+    { key: "trend", label: `Trend (${trendPeriod})`, kind: "number", align: "right" },
     { key: "shares", label: "Shares", kind: "number", align: "right" },
     { key: "price", label: "Price", kind: "number", align: "right" },
     { key: "currency", label: "Ccy" },
@@ -87,14 +90,29 @@ function positionColumns(base: string): Column[] {
   ];
 }
 
-function positionRow(p: Position, base: string): Row {
+/** `trends` is undefined while they load, so the column shows a placeholder rather than "no data". */
+function positionRow(p: Position, base: string, trends: Trends | undefined, trendPeriod: string): Row {
   const name = p.balanceOnly ? "Balance only (holdings unknown)" : p.name;
+  const trend = p.balanceOnly ? undefined : trends?.trends[p.ticker];
   return {
     key: `${p.ticker}|${p.account}`,
     cells: {
       ticker: { value: p.ticker, className: "font-medium text-slate-800" },
       account: { value: p.account },
       name: { value: name, className: "max-w-56 truncate text-slate-600", title: name },
+      trend: trend
+        ? {
+            value: trend.changePct,
+            label: pct(trend.changePct, 1),
+            title: `${pct(trend.changePct, 1)} over ${trendPeriod}, from daily closes in ${p.currency}`,
+            display: (
+              <span className="inline-flex items-center gap-2">
+                <Sparkline closes={trend.closes} changePct={trend.changePct} period={trendPeriod} />
+                <span className={`w-14 tabular-nums ${red(trend.changePct) ?? "text-slate-600"}`}>{pct(trend.changePct, 1)}</span>
+              </span>
+            ),
+          }
+        : { value: null, display: !trends && !p.balanceOnly ? <span className="inline-block h-[22px] w-[72px] animate-pulse rounded bg-slate-100 align-middle" aria-label="Loading trend" /> : "—" },
       shares: { value: p.balanceOnly ? null : p.shares, display: p.balanceOnly ? "—" : shares(p.shares) },
       price: { value: p.balanceOnly ? null : p.price, display: p.balanceOnly ? "—" : money(p.price, p.currency) },
       currency: { value: p.currency },
@@ -110,13 +128,14 @@ function positionRow(p: Position, base: string): Row {
   };
 }
 
-export function PositionsView({ figures }: { figures: Figures }) {
+export function PositionsView({ figures, trends }: { figures: Figures; trends?: Trends }) {
   const base = figures.base;
+  const trendPeriod = PERIOD_NAMES[trends?.period ?? "1mo"] ?? trends?.period ?? "1 month";
   return (
     <Card title="Positions" action={<span className="text-xs text-slate-500">Prices in the listing currency; amounts in {base}</span>}>
-      <DataTable label="Positions" columns={positionColumns(base)} rows={figures.positions.map((p) => positionRow(p, base))} footer={
+      <DataTable label="Positions" columns={positionColumns(base, trendPeriod)} rows={figures.positions.map((p) => positionRow(p, base, trends, trendPeriod))} footer={
         <tr>
-          <td colSpan={6}>Total</td>
+          <td colSpan={7}>Total</td>
           <td className="num">{money(figures.totals.value, base)}</td>
           <td className="num">{money(figures.totals.cost, base)}</td>
           <td className="num">{money(figures.totals.pl, base, { signed: true })}</td>

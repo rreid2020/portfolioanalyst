@@ -88,3 +88,30 @@ export function CorrelationGrid({ tickers, matrix }: { tickers: string[]; matrix
     </div>
   );
 }
+
+/** Points for an SVG polyline drawing `values` across a width × height box, highest value at the top. */
+export function sparkPoints(values: number[], width: number, height: number, pad = 1.5): string {
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo || 1;
+  const step = values.length > 1 ? (width - pad * 2) / (values.length - 1) : 0;
+  return values
+    .map((v, i) => `${(pad + i * step).toFixed(1)},${(pad + (1 - (v - lo) / span) * (height - pad * 2)).toFixed(1)}`)
+    .join(" ");
+}
+
+/** A tiny line of recent closes, in the gain colour if it ended higher than it started, else the loss colour. */
+export function Sparkline({ closes, changePct, period }: { closes: number[]; changePct: number | null; period: string }) {
+  const up = (changePct ?? 0) >= 0;
+  const width = 72;
+  const height = 22;
+  return (
+    <svg
+      width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img"
+      aria-label={`${up ? "Up" : "Down"} ${num(Math.abs(changePct ?? 0), 1)}% over ${period}`}
+      className={`inline-block align-middle ${up ? "text-gain" : "text-loss"}`}
+    >
+      <polyline points={sparkPoints(closes, width, height)} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}

@@ -17,6 +17,7 @@ from portfolio_import import normalize_account
 
 QUOTE_TTL = 300  # seconds; quotes and FX
 HISTORY_TTL = 3600
+TREND_TTL = 900  # one month of daily closes; today's bar moves, so not the full hour
 
 
 class TTLCache:
@@ -46,10 +47,11 @@ class TTLCache:
 _quote_cache = TTLCache(QUOTE_TTL)
 _fx_cache = TTLCache(QUOTE_TTL)
 _history_cache = TTLCache(HISTORY_TTL)
+_trend_cache = TTLCache(TREND_TTL)
 
 
 def clear_caches() -> None:
-    for cache in (_quote_cache, _fx_cache, _history_cache):
+    for cache in (_quote_cache, _fx_cache, _history_cache, _trend_cache):
         cache.clear()
 
 
@@ -63,6 +65,10 @@ def fx_rates(currencies: tuple, base: str) -> dict:
 
 def history(symbols: tuple):
     return _history_cache.get(symbols, lambda: portfolio_analytics.fetch_history(symbols))
+
+
+def trends(symbols: tuple) -> dict:
+    return _trend_cache.get(symbols, lambda: portfolio_analytics.fetch_trends(symbols))
 
 
 def _cell(value):

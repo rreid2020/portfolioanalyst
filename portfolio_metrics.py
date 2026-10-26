@@ -4,6 +4,7 @@ Market value, unrealized P/L, weights, day change and allocation are worked
 out here and converted to one base currency, so the dashboard shows them
 instantly and the analyst gets verified numbers instead of doing the math.
 """
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
@@ -49,6 +50,7 @@ class Quote:
     sector: str = ""
     country: str = ""
     quote_type: str = ""
+    as_of: float | None = None  # epoch seconds of the price: Yahoo's last trade, else when fetched
 
 
 @dataclass
@@ -66,6 +68,7 @@ class Figures:
     total_cost: float | None = None  # positions with a known average price only
     cost_covered_value: float = 0.0  # market value of those positions
     day_change: float | None = None
+    prices_as_of: float | None = None  # epoch seconds of the newest quote used
 
     @property
     def total_pl(self):
@@ -136,6 +139,7 @@ def fetch_quote(ticker: str):
         sector=info.get("sector") or "",
         country=info.get("country") or "",
         quote_type=info.get("quoteType") or "",
+        as_of=_number(info.get("regularMarketTime")) or time.time(),
     )
 
 
@@ -270,6 +274,7 @@ def compute(holdings, quotes: dict, fx: dict, base: str) -> Figures:
     positions["Weight %"] = positions["Value"] / total_value * 100 if total_value else 0.0
     positions = positions[POSITION_COLUMNS].sort_values("Value", ascending=False, ignore_index=True)
 
+    priced = {h["ticker"] for h in holdings} - set(unpriced) - set(balance_tickers)
     return Figures(
         base=base,
         positions=positions,
@@ -281,6 +286,7 @@ def compute(holdings, quotes: dict, fx: dict, base: str) -> Figures:
         total_cost=total_cost if has_cost else None,
         cost_covered_value=cost_covered_value,
         day_change=day_change if has_day_change else None,
+        prices_as_of=max((q.as_of for t, q in quotes.items() if q and q.as_of and t in priced), default=None),
     )
 
 

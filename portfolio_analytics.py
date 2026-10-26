@@ -28,6 +28,7 @@ PERIODS = {
     "5Y": pd.DateOffset(years=5),
 }
 HISTORY_PERIOD = "5y"
+TREND_PERIOD = "1mo"  # the mini trend charts beside each position
 TRADING_DAYS = 252
 MAX_CORRELATION_HOLDINGS = 12
 
@@ -52,6 +53,27 @@ def fetch_history(symbols) -> pd.DataFrame:
         list(symbols), period=HISTORY_PERIOD, interval="1d", auto_adjust=True, actions=True,
         progress=False, threads=True, multi_level_index=True,
     )
+
+
+def fetch_trends(symbols) -> dict:
+    """Each symbol's daily closes over TREND_PERIOD, oldest first, in its listing currency.
+
+    Returns {symbol: [close, ...]}; symbols Yahoo has fewer than two closes for are left out.
+    """
+    if not symbols:
+        return {}
+    data = yf.download(
+        list(symbols), period=TREND_PERIOD, interval="1d", auto_adjust=True,
+        progress=False, threads=True, multi_level_index=True,
+    )
+    close = _field(data, "Close")
+    trends = {}
+    for symbol in symbols:
+        if symbol in close:
+            series = close[symbol].dropna()
+            if len(series) >= 2:
+                trends[symbol] = [round(float(v), 6) for v in series]
+    return trends
 
 
 def _field(history: pd.DataFrame, name: str) -> pd.DataFrame:

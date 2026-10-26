@@ -3,13 +3,14 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AiBadge, Card, Empty, Notice, PageHeader, Stat } from "@/components/ui";
 import type { Holding } from "@/lib/portfolios";
-import { py, pyMeta, PyError, type Analytics, type Base, type Figures, type Meta } from "@/lib/py";
+import { py, pyMeta, PyError, type Analytics, type Base, type Figures, type Meta, type Trends } from "@/lib/py";
 import { date, money, num, pct } from "@/lib/format";
 import { ALL } from "@/lib/selection";
 import {
   AccountsView, AllocationView, ALLOCATION_VIEWS, AnalyticsSkeleton, DividendsView, GainLossView, PerformanceView, PositionsView,
 } from "./views";
 import { Analyst, type SavedAnalysis } from "./Analyst";
+import { PriceFreshness } from "./PriceFreshness";
 import { Rebalancer, type RebalanceOptions } from "./Rebalancer";
 
 const TABS = [
@@ -127,6 +128,13 @@ function BodySkeleton() {
   );
 }
 
+async function PositionsWithTrends({ figures }: { figures: Figures }) {
+  const tickers = [...new Set(figures.positions.filter((p) => !p.balanceOnly).map((p) => p.ticker))];
+  // Without trends the table still works, with a dash where each chart would be.
+  const { data: trends } = await attempt(() => py<Trends>("/trends", { tickers }));
+  return <PositionsView figures={figures} trends={trends ?? { period: "1mo", trends: {} }} />;
+}
+
 async function DashboardBody({ portfolio, search, analysis, base, tab, view, editHref, href }: {
   portfolio: Portfolio; search: Search; analysis: SavedAnalysis | null; base: Base; tab: Tab;
   view: (typeof ALLOCATION_VIEWS)[number]; editHref: string; href: (changes: Record<string, string>) => string;
@@ -155,7 +163,8 @@ async function DashboardBody({ portfolio, search, analysis, base, tab, view, edi
         <Stat label={`Unrealized P/L (${base})`} value={money(t.pl, base, { signed: true, whole: true })} sub={pct(t.plPct)} tone={t.pl == null ? undefined : t.pl >= 0 ? "good" : "bad"} />
         <Stat label={`Today (${base})`} value={money(t.dayChange, base, { signed: true, whole: true })} sub={`${pct(t.dayChangePct, 2)} since the previous close`} tone={t.dayChange == null ? undefined : t.dayChange >= 0 ? "good" : "bad"} />
       </div>
-      <p className="mb-4 text-xs text-slate-500">Live Yahoo Finance quotes, which can be delayed up to 15 minutes.{fxNote}</p>
+      {/* Not on the Analyst tab: a refresh mid-review would only add load while the model writes. */}
+      <PriceFreshness pricesAsOf={figures.pricesAsOf} fxNote={fxNote} autoRefresh={tab !== "analyst"} />
 
       {figures.positions.length > 0 && (
         <>
@@ -170,7 +179,12 @@ async function DashboardBody({ portfolio, search, analysis, base, tab, view, edi
           </nav>
           {tab === "allocation" && <AllocationView figures={figures} view={view} href={href} />}
           {tab === "gain-loss" && <GainLossView figures={figures} editHref={editHref} />}
-          {tab === "positions" && <PositionsView figures={figures} />}
+          {tab === "positions" && (
+            // The table shows at once; the trend charts stream in when a month of closes has loaded.
+            <Suspense key={base} fallback={<PositionsView figures={figures} />}>
+              <PositionsWithTrends figures={figures} />
+            </Suspense>
+          )}
           {tab === "rebalance" && <Rebalancer holdings={portfolio.holdings} base={base} analystPath={href({ tab: "analyst" })} />}
           {tab === "analyst" && (
             <Analyst portfolioId={portfolio.id} base={base} period={period} benchmark={benchmark} saved={analysis}

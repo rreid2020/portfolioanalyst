@@ -5,6 +5,7 @@ Run: python -m unittest discover -s tests
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -135,6 +136,22 @@ class DividendsTest(unittest.TestCase):
         self.assertEqual(rows.loc["SHOP.TO", "Annual income"], 0)
         self.assertAlmostEqual(d.total_income, aapl_paid * 14 + 40)
         self.assertAlmostEqual(d.portfolio_yield, d.total_income / figures.total_value * 100)
+
+
+class TrendsTest(unittest.TestCase):
+    def test_trends_are_closes_oldest_first_skipping_thin_or_missing_symbols(self):
+        close = {"AAA": ramp(10, 12), "THIN": [np.nan] * (len(DAYS) - 1) + [5.0]}
+        with mock.patch.object(pa.yf, "download", return_value=make_history(close)) as download:
+            trends = pa.fetch_trends(("AAA", "THIN", "GONE"))
+        self.assertEqual(download.call_args.kwargs["period"], pa.TREND_PERIOD)
+        self.assertEqual(set(trends), {"AAA"})
+        self.assertEqual(trends["AAA"][0], 10.0)
+        self.assertEqual(trends["AAA"][-1], 12.0)
+
+    def test_no_symbols_skips_the_download(self):
+        with mock.patch.object(pa.yf, "download") as download:
+            self.assertEqual(pa.fetch_trends(()), {})
+        download.assert_not_called()
 
 
 class MarkdownTest(unittest.TestCase):

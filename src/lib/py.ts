@@ -86,6 +86,7 @@ export type Figures = {
   base: Base;
   totals: { value: number; cost: number | null; pl: number | null; plPct: number | null; dayChange: number | null; dayChangePct: number | null };
   fx: Record<string, number>;
+  pricesAsOf: string | null; // when the newest price traded, UTC ISO
   unpriced: string[];
   positions: Position[];
   byTicker: Position[];
@@ -113,6 +114,9 @@ export type Performance = {
   correlation: { tickers: string[]; matrix: (number | null)[][] };
   excluded: string[]; lateStarts: Record<string, string>;
 };
+
+/** Recent daily closes per ticker, for the mini trend charts. `period` is Yahoo's, e.g. "1mo". */
+export type Trends = { period: string; trends: Record<string, { closes: number[]; changePct: number | null }> };
 
 export type Analytics = {
   performance: Performance | null;

@@ -43,3 +43,30 @@ describe("format", () => {
     expect(date(null)).toBe(DASH);
   });
 });
+
+describe("market hours and price times", () => {
+  it("knows when North American markets trade (Eastern time, weekdays)", async () => {
+    const { marketOpen } = await import("@/lib/market-hours");
+    expect(marketOpen(new Date("2026-10-26T13:29:00Z"))).toBe(false); // Mon 9:29 a.m. EDT
+    expect(marketOpen(new Date("2026-10-26T13:30:00Z"))).toBe(true); // 9:30 a.m.
+    expect(marketOpen(new Date("2026-10-26T19:59:00Z"))).toBe(true); // 3:59 p.m.
+    expect(marketOpen(new Date("2026-10-26T20:00:00Z"))).toBe(false); // 4:00 p.m.
+    expect(marketOpen(new Date("2026-10-24T15:00:00Z"))).toBe(false); // Saturday
+    expect(marketOpen(new Date("2026-12-07T14:30:00Z"))).toBe(true); // 9:30 a.m. EST, after the clock change
+  });
+
+  it("shows the day only when the price isn't from today", async () => {
+    const { priceTime } = await import("@/lib/market-hours");
+    const friday = "2026-10-23T20:00:00Z";
+    expect(priceTime(friday, new Date("2026-10-26T14:00:00Z"), "America/Toronto")).toMatch(/^Fri, Oct 23, 4:00 p\.m\. EDT$/);
+    expect(priceTime(friday, new Date("2026-10-23T21:00:00Z"), "America/Toronto")).toMatch(/^4:00 p\.m\. EDT$/);
+  });
+});
+
+describe("sparkline points", () => {
+  it("spans the box with the highest close at the top", async () => {
+    const { sparkPoints } = await import("@/app/(app)/portfolios/[id]/charts");
+    expect(sparkPoints([1, 3, 2], 10, 10, 0)).toBe("0.0,10.0 5.0,0.0 10.0,5.0");
+    expect(sparkPoints([4, 4], 10, 10, 0)).toBe("0.0,10.0 10.0,10.0"); // flat line stays drawable
+  });
+});

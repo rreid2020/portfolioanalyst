@@ -8,6 +8,7 @@ Local: uvicorn api.index:app --reload --port 8000   (docs at /api/py/docs)
 """
 import json
 import sys
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -109,6 +110,10 @@ class AnalyticsIn(PortfolioIn):
     period: Period = DEFAULT_PERIOD
 
 
+class TrendsIn(BaseModel):
+    tickers: list[str] = Field(max_length=500)
+
+
 class RebalanceOptions(BaseModel):
     groupBy: GroupBy = "Holding"
     scope: str = rebalance.ALL_ACCOUNTS
@@ -154,6 +159,10 @@ def flag_balances(rows: list, figures) -> list:
     return rows
 
 
+def iso_utc(epoch: float | None) -> str | None:
+    return None if epoch is None else datetime.fromtimestamp(epoch, timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def figures_json(figures) -> dict:
     return {
         "base": figures.base,
@@ -166,6 +175,8 @@ def figures_json(figures) -> dict:
             "dayChangePct": number(figures.day_change_pct),
         },
         "fx": figures.fx,
+        # When the newest price was traded (Yahoo, usually ~15 min delayed), as UTC ISO 8601.
+        "pricesAsOf": iso_utc(figures.prices_as_of),
         "unpriced": figures.unpriced,
         "positions": flag_balances(records(figures.positions), figures),
         "byTicker": flag_balances(records(figures.by_ticker()), figures) if not figures.positions.empty else [],
@@ -332,6 +343,17 @@ def analytics(body: AnalyticsIn):
         "dividends": dividends_json(dividends),
         "hints": hints_json(hints),
         "accountSummary": records(account_hints.account_summary(f, dividends)),
+    }
+
+
+@private.post("/trends")
+def trends(body: TrendsIn):
+    """One month of daily closes per ticker, for the mini trend charts beside each position."""
+    tickers = tuple(sorted({t.strip().upper() for t in body.tickers if t.strip()}))
+    found = portfolio_service.trends(tickers)
+    return {
+        "period": portfolio_analytics.TREND_PERIOD,
+        "trends": {t: {"closes": c, "changePct": (c[-1] / c[0] - 1) * 100 if c[0] else None} for t, c in found.items()},
     }
 
 

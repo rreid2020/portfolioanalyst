@@ -81,6 +81,17 @@ class ComputeTest(unittest.TestCase):
         self.assertEqual(figures.unpriced, ["AAPL"])
         self.assertTrue(figures.positions.empty)
 
+    def test_prices_as_of_is_the_newest_quote_held(self):
+        quotes = {
+            "SHOP.TO": Quote(price=100.0, previous_close=99.0, currency="CAD", as_of=1_000.0),
+            "XEQT.TO": Quote(price=40.0, previous_close=39.0, currency="CAD", as_of=2_000.0),
+            "RY.TO": Quote(price=150.0, previous_close=149.0, currency="CAD", as_of=9_000.0),  # not held
+        }
+        figures = portfolio_metrics.compute([holding("SHOP.TO", 1), holding("XEQT.TO", 1)], quotes, FX, "CAD")
+        self.assertEqual(figures.prices_as_of, 2_000.0)
+        balance_only = [{"ticker": "Managed", "shares": 500.0, "balance": 500.0, "avg_price": None, "currency": "CAD", "account": None}]
+        self.assertIsNone(portfolio_metrics.compute(balance_only, quotes, FX, "CAD").prices_as_of)
+
     def test_duplicate_tickers_merge_within_an_account(self):
         figures = portfolio_metrics.compute(
             [holding("AAPL", 10, 100, "USD"), holding("AAPL", 10, 200, "USD")], QUOTES, FX, "USD"
