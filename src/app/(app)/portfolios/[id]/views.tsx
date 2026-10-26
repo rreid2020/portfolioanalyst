@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Card, Empty, InfoTip, Notice, Stat } from "@/components/ui";
 import { readPerformance, RISK_TIPS } from "@/lib/risk-reading";
 import { DataTable, type Column, type Row } from "@/components/DataTable";
-import type { Analytics, Base, Figures, Meta, Position, Trends } from "@/lib/py";
+import type { Analytics, Base, Figures, LineGroup, Meta, Position, Trends } from "@/lib/py";
 import { incomeByAccount } from "@/lib/dividends";
 import { date, money, monthYear, num, pct, share, shares } from "@/lib/format";
 import { BarList, CorrelationGrid, fold, Sparkline, type Bar } from "./charts";
@@ -315,8 +315,13 @@ export function DividendsView({ analytics, base, balances }: { analytics: Analyt
   );
 }
 
-export function PerformanceView({ analytics, meta, figures, period, benchmark, href }: {
-  analytics: Analytics; meta: Meta; figures: Figures; period: string; benchmark: string; href: Href;
+const LINE_OPTIONS: { value: LineGroup | ""; label: string }[] = [
+  { value: "", label: "Portfolio" }, { value: "Holding", label: "Holdings" }, { value: "Account", label: "Accounts" },
+  { value: "Sector", label: "Sectors" }, { value: "Type", label: "Types" },
+];
+
+export function PerformanceView({ analytics, meta, figures, period, benchmark, lines, href }: {
+  analytics: Analytics; meta: Meta; figures: Figures; period: string; benchmark: string; lines: LineGroup | ""; href: Href;
 }) {
   const p = analytics.performance;
   const controls = (
@@ -332,6 +337,8 @@ export function PerformanceView({ analytics, meta, figures, period, benchmark, h
   if (late.length) note += ` Starts later than the period because ${late.map(([t, d]) => `${t} has prices only from ${monthYear(d)}`).join(", ")}.`;
   if (p.excluded.length) note += ` No price history for ${p.excluded.join(", ")}.`;
   if (figures.balances.length) note += ` Balances entered without holdings (${figures.balances.join(", ")}) aren't in the backtest.`;
+  if (p.lines.by) note += ` Each ${p.lines.by.toLowerCase()} line is that group's current holdings, valued the same way and indexed to 100.`;
+  if (p.lines.leftOut) note += ` The ${p.lines.names.length} largest are drawn; ${p.lines.leftOut} smaller ${p.lines.leftOut === 1 ? "isn't" : "aren't"}.`;
   return (
     <div className="space-y-4">
       {controls}
@@ -364,7 +371,11 @@ export function PerformanceView({ analytics, meta, figures, period, benchmark, h
           </span>
         ) : undefined}
       >
-        <PerformanceChart series={p.series} benchmarkName={p.benchmarkName} />
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2">
+          <span className="text-xs font-medium text-slate-600">Lines</span>
+          <Pills label="Lines" current={lines} href={href} options={LINE_OPTIONS} />
+        </div>
+        <PerformanceChart series={p.series} benchmarkName={p.benchmarkName} lineNames={p.lines.names} />
         <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">{note}</p>
       </Card>
       {p.correlation.tickers.length > 1 && (

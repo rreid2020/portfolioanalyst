@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AiBadge, Card, Empty, Notice, PageHeader, Stat } from "@/components/ui";
 import type { Holding } from "@/lib/portfolios";
-import { py, pyMeta, PyError, type Analytics, type Base, type Figures, type Meta, type Trends } from "@/lib/py";
+import { LINE_GROUPS, py, pyMeta, PyError, type Analytics, type Base, type Figures, type LineGroup, type Meta, type Trends } from "@/lib/py";
 import { date, money, num, pct } from "@/lib/format";
 import { ALL } from "@/lib/selection";
 import {
@@ -28,7 +28,7 @@ const ANALYTICS_TABS: Tab[] = ["accounts", "performance", "dividends"];
 
 /** A saved portfolio, or (id null) all of them combined, with how many went into it. */
 export type Portfolio = { id: number | null; name: string; updatedAt: string; holdings: Holding[]; combined?: number };
-export type Search = { tab?: string; base?: string; view?: string; period?: string; benchmark?: string; rebalance?: string };
+export type Search = { tab?: string; base?: string; view?: string; period?: string; benchmark?: string; lines?: string; rebalance?: string };
 
 /** The Rebalance tab's settings, passed to the Analyst tab in the URL; anything malformed is ignored. */
 function rebalanceFrom(raw: string | undefined): RebalanceOptions | null {
@@ -53,15 +53,15 @@ async function attempt<T>(load: () => Promise<T>): Promise<{ data?: T; error?: s
 }
 
 /** The tabs that need five years of price history load it here, behind a Suspense fallback. */
-async function AnalyticsTab({ tab, holdings, figures, meta, period, benchmark, href, editHref }: {
-  tab: Tab; holdings: Holding[]; figures: Figures; meta: Meta; period: string; benchmark: string;
+async function AnalyticsTab({ tab, holdings, figures, meta, period, benchmark, lines, href, editHref }: {
+  tab: Tab; holdings: Holding[]; figures: Figures; meta: Meta; period: string; benchmark: string; lines: LineGroup | "";
   href: (p: Record<string, string>) => string; editHref: string;
 }) {
-  const { data: analytics, error } = await attempt(() => py<Analytics>("/analytics", { holdings, base: figures.base, benchmark, period }));
+  const { data: analytics, error } = await attempt(() => py<Analytics>("/analytics", { holdings, base: figures.base, benchmark, period, ...(tab === "performance" && lines && { lines }) }));
   if (!analytics) return <Notice tone="error">Couldn&rsquo;t load price history: {error}</Notice>;
   if (tab === "accounts") return <AccountsView figures={figures} analytics={analytics} disclaimer={meta.disclaimer} editHref={editHref} />;
   if (tab === "dividends") return <DividendsView analytics={analytics} base={figures.base} balances={figures.balances} />;
-  return <PerformanceView analytics={analytics} meta={meta} figures={figures} period={period} benchmark={benchmark} href={href} />;
+  return <PerformanceView analytics={analytics} meta={meta} figures={figures} period={period} benchmark={benchmark} lines={lines} href={href} />;
 }
 
 /** A saved portfolio's live dashboard: header, totals, and the tab chosen in `search`. */
@@ -74,7 +74,7 @@ export function Dashboard({ portfolio, search, analysis = null, path = `/portfol
   // The combined view has no holdings of its own to edit; its links go to the portfolio list instead.
   const editHref = portfolio.id == null ? "/portfolios" : `/portfolios/${portfolio.id}/edit`;
   const holdingsCount = `${portfolio.holdings.length} holding${portfolio.holdings.length === 1 ? "" : "s"}`;
-  const current = { tab, base, view, period: search.period ?? "", benchmark: search.benchmark ?? "" };
+  const current = { tab, base, view, period: search.period ?? "", benchmark: search.benchmark ?? "", lines: search.lines ?? "" };
   const href = (changes: Record<string, string>) => {
     const q = new URLSearchParams(Object.entries({ ...current, ...changes }).filter(([, v]) => v) as [string, string][]);
     return `${path}?${q}`;
@@ -148,6 +148,7 @@ async function DashboardBody({ portfolio, search, analysis, base, tab, view, edi
   if (!figures || !meta) return null;
   const period = meta.periods.includes(search.period ?? "") ? search.period! : meta.defaultPeriod;
   const benchmark = meta.benchmarks.some((b) => b.symbol === search.benchmark) ? search.benchmark! : meta.defaultBenchmark;
+  const lines = LINE_GROUPS.find((g) => g === search.lines) ?? "";
   const t = figures.totals;
   const fxNote = Object.keys(figures.fx).length
     ? ` Totals in ${base} at ${Object.entries(figures.fx).sort().map(([c, r]) => `1 ${c} = ${num(r, 4)} ${base}`).join(", ")}.`
@@ -193,7 +194,7 @@ async function DashboardBody({ portfolio, search, analysis, base, tab, view, edi
           )}
           {ANALYTICS_TABS.includes(tab) && (
             <Suspense key={`${tab}|${base}|${period}|${benchmark}`} fallback={<AnalyticsSkeleton />}>
-              <AnalyticsTab tab={tab} holdings={portfolio.holdings} figures={figures} meta={meta} period={period} benchmark={benchmark} href={href} editHref={editHref} />
+              <AnalyticsTab tab={tab} holdings={portfolio.holdings} figures={figures} meta={meta} period={period} benchmark={benchmark} lines={lines} href={href} editHref={editHref} />
             </Suspense>
           )}
         </>

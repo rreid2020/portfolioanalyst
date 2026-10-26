@@ -47,6 +47,7 @@ MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 Base = Literal["CAD", "USD"]
 Benchmark = Literal[tuple(portfolio_analytics.BENCHMARKS)]
 Period = Literal[tuple(portfolio_analytics.PERIODS)]
+Lines = Literal[tuple(portfolio_analytics.LINE_GROUPS)]
 GroupBy = Literal[tuple(rebalance.GROUPINGS)]
 
 app = FastAPI(title="Portfolio by Axiom API", docs_url="/api/py/docs", redoc_url=None, openapi_url="/api/py/openapi.json")
@@ -108,6 +109,7 @@ class PortfolioIn(BaseModel):
 class AnalyticsIn(PortfolioIn):
     benchmark: Benchmark = DEFAULT_BENCHMARK
     period: Period = DEFAULT_PERIOD
+    lines: Lines | None = None  # extra chart lines per holding, account, sector or type
 
 
 class TrendsIn(BaseModel):
@@ -192,7 +194,9 @@ def figures_json(figures) -> dict:
 def performance_json(p) -> dict | None:
     if p is None:
         return None
-    series = p.series.rename_axis("date").reset_index()
+    # Group lines ride along in each point as l0, l1, ... so the chart reads one array; `lines.names` labels them.
+    keyed = p.lines.set_axis([f"l{i}" for i in range(len(p.lines.columns))], axis=1)
+    series = p.series.join(keyed).rename_axis("date").reset_index()
     series["date"] = series["date"].dt.strftime("%Y-%m-%d")
     correlation = p.correlation
     return {
@@ -216,6 +220,7 @@ def performance_json(p) -> dict | None:
         },
         "excluded": p.excluded,
         "lateStarts": {t: day(d) for t, d in p.late_starts.items()},
+        "lines": {"by": p.lines_by, "names": list(p.lines.columns), "leftOut": p.lines_left_out},
     }
 
 
@@ -236,9 +241,9 @@ def hints_json(hints) -> list:
     ]
 
 
-def analytics_for(figures, benchmark: str, period: str):
+def analytics_for(figures, benchmark: str, period: str, lines: str | None = None):
     history = portfolio_service.load_history(figures)
-    performance = portfolio_analytics.compute_performance(figures, history, benchmark, period)
+    performance = portfolio_analytics.compute_performance(figures, history, benchmark, period, lines)
     dividends = portfolio_analytics.compute_dividends(figures, history)
     hints = account_hints.placement_hints(figures, dividends)
     return performance, dividends, hints
@@ -337,7 +342,7 @@ def analytics(body: AnalyticsIn):
     _, f = figures_for(body)
     if f.positions.empty:
         return {"performance": None, "dividends": None, "hints": [], "accountSummary": []}
-    performance, dividends, hints = analytics_for(f, body.benchmark, body.period)
+    performance, dividends, hints = analytics_for(f, body.benchmark, body.period, body.lines)
     return {
         "performance": performance_json(performance),
         "dividends": dividends_json(dividends),

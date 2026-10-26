@@ -108,12 +108,18 @@ export type DividendRow = {
 
 export type Performance = {
   period: string; benchmark: string; benchmarkName: string; start: string; end: string;
-  series: { date: string; portfolio: number; benchmark?: number | null }[];
+  /** Growth of 100 per day; `l0`, `l1`, ... are the group lines named in `lines.names`, when asked for. */
+  series: ({ date: string; portfolio: number; benchmark?: number | null } & Record<`l${number}`, number | null>)[];
   portfolioReturn: number; benchmarkReturn: number | null; annualizedReturn: number | null;
   volatility: number | null; beta: number | null; maxDrawdown: number; drawdownPeak: string; drawdownTrough: string;
   correlation: { tickers: string[]; matrix: (number | null)[][] };
   excluded: string[]; lateStarts: Record<string, string>;
+  lines: { by: LineGroup | null; names: string[]; leftOut: number };
 };
+
+/** Groupings the Performance chart can draw a line per group for (the API's `lines` option). */
+export const LINE_GROUPS = ["Holding", "Account", "Sector", "Type"] as const;
+export type LineGroup = (typeof LINE_GROUPS)[number];
 
 /** Recent daily closes per ticker, for the mini trend charts. `period` is Yahoo's, e.g. "1mo". */
 export type Trends = { period: string; trends: Record<string, { closes: number[]; changePct: number | null }> };

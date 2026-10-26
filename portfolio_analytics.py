@@ -31,6 +31,9 @@ HISTORY_PERIOD = "5y"
 TREND_PERIOD = "1mo"  # the mini trend charts beside each position
 TRADING_DAYS = 252
 MAX_CORRELATION_HOLDINGS = 12
+# The Performance chart's optional extra lines: one per group of positions, by this column.
+LINE_GROUPS = {"Holding": "Ticker", "Account": "Account", "Sector": "Sector", "Type": "Type"}
+MAX_LINES = 12  # more lines than this can't be told apart; the largest groups are drawn
 
 
 def fx_symbol(currency: str, base: str) -> str:
@@ -117,10 +120,33 @@ class Performance:
     correlation: pd.DataFrame
     excluded: list = field(default_factory=list)  # no price history
     late_starts: dict = field(default_factory=dict)  # ticker -> first date, when after the period start
+    # Growth of 100 per group when lines were asked for (columns largest group first), else empty
+    lines: pd.DataFrame = field(default_factory=pd.DataFrame)
+    lines_by: str | None = None
+    lines_left_out: int = 0  # groups beyond MAX_LINES
 
 
-def compute_performance(figures, history: pd.DataFrame, benchmark: str, period: str):
-    """Backtest of figures.positions over `period`, or None without enough history."""
+def _group_lines(figures, per_share: pd.DataFrame, index, by: str):
+    """Each group's value over time, indexed to 100, for the groups of `by` (a LINE_GROUPS key)."""
+    column = LINE_GROUPS[by]
+    rows = figures.positions[figures.positions["Ticker"].isin(per_share.columns)]
+    values = {}
+    sizes = {}
+    for group, members in rows.groupby(column, sort=False):
+        total = sum(per_share[r.Ticker] * r.Shares for r in members.itertuples(index=False))
+        total = total.reindex(index)
+        if total.notna().all() and total.iloc[0] > 0:
+            values[str(group)] = total / total.iloc[0] * 100
+            sizes[str(group)] = float(members["Value"].sum())
+    order = sorted(values, key=lambda g: -sizes[g])
+    return pd.DataFrame({g: values[g] for g in order[:MAX_LINES]}, index=index), max(0, len(order) - MAX_LINES)
+
+
+def compute_performance(figures, history: pd.DataFrame, benchmark: str, period: str, lines: str | None = None):
+    """Backtest of figures.positions over `period`, or None without enough history.
+
+    `lines` (a LINE_GROUPS key) adds a growth line per holding, account, sector or type.
+    """
     close = _field(history, "Close")
     positions = figures.by_ticker() if not figures.positions.empty else figures.positions
     # Balance-only holdings have no price history; the backtest covers the priced holdings.
@@ -188,6 +214,8 @@ def compute_performance(figures, history: pd.DataFrame, benchmark: str, period: 
     trough = drawdown.idxmin()
     peak = portfolio.loc[:trough].idxmax()
 
+    group_lines, left_out = _group_lines(figures, per_share, portfolio.index, lines) if lines in LINE_GROUPS else (pd.DataFrame(), 0)
+
     top = positions[positions["Ticker"].isin(per_share.columns)].head(MAX_CORRELATION_HOLDINGS)["Ticker"]
     correlation = per_share[list(top)].pct_change().dropna(how="all").corr() if len(top) > 1 else pd.DataFrame()
 
@@ -209,6 +237,9 @@ def compute_performance(figures, history: pd.DataFrame, benchmark: str, period: 
         correlation=correlation,
         excluded=excluded,
         late_starts=late_starts,
+        lines=group_lines,
+        lines_by=lines if lines in LINE_GROUPS else None,
+        lines_left_out=left_out,
     )
 
 

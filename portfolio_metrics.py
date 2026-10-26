@@ -17,10 +17,12 @@ BASE_CURRENCIES = ("CAD", "USD")
 MINOR_UNITS = {"GBp": ("GBP", 100), "GBX": ("GBP", 100), "ZAc": ("ZAR", 100), "ILA": ("ILS", 100)}
 
 FUND_TYPES = {"ETF": "ETF", "MUTUALFUND": "Mutual fund"}
+# What kind of holding each Yahoo quoteType is, for grouping (the Performance chart's "Type" lines).
+HOLDING_TYPES = {"EQUITY": "Stock", **FUND_TYPES, "MONEYMARKET": "Money market", "CRYPTOCURRENCY": "Crypto", "INDEX": "Index"}
 
 POSITION_COLUMNS = [
     "Ticker", "Account", "Name", "Shares", "Price", "Currency", "Value", "Cost", "P/L",
-    "P/L %", "Day change", "Weight %", "Sector", "Country",
+    "P/L %", "Day change", "Weight %", "Sector", "Country", "Type",
 ]
 UNSPECIFIED_ACCOUNT = "Unspecified"
 
@@ -220,7 +222,7 @@ def compute(holdings, quotes: dict, fx: dict, base: str) -> Figures:
             rows.append({
                 "Ticker": h["ticker"], "Account": h.get("account") or UNSPECIFIED_ACCOUNT, "Name": BALANCE_NAME,
                 "Shares": h["balance"], "Price": 1.0, "Currency": currency, "Value": value, "Cost": cost,
-                "P/L": pl, "P/L %": pl_pct, "Day change": None, "Sector": BALANCE_SECTOR, "Country": "Unknown",
+                "P/L": pl, "P/L %": pl_pct, "Day change": None, "Sector": BALANCE_SECTOR, "Country": "Unknown", "Type": "Managed balance",
             })
             continue
         quote = quotes.get(h["ticker"])
@@ -265,6 +267,7 @@ def compute(holdings, quotes: dict, fx: dict, base: str) -> Figures:
             "Day change": change,
             "Sector": quote.sector or FUND_TYPES.get(quote.quote_type, "Unknown"),
             "Country": quote.country or ("Fund (mixed)" if quote.quote_type in FUND_TYPES else "Unknown"),
+            "Type": HOLDING_TYPES.get(quote.quote_type, "Other"),
         })
 
     positions = pd.DataFrame(rows, columns=[c for c in POSITION_COLUMNS if c != "Weight %"])

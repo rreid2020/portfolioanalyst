@@ -61,6 +61,34 @@ class PerformanceTest(unittest.TestCase):
         self.assertEqual(list(p.series.columns), ["Portfolio", "Benchmark"])
         self.assertAlmostEqual(p.series["Portfolio"].iloc[0], 100)
 
+    def test_lines_per_holding_account_and_type(self):
+        # SHOP doubles, XEQT is flat. SHOP is split across two accounts; the TFSA also holds XEQT.
+        history = make_history({"SHOP.TO": ramp(100, 200), "XEQT.TO": flat(30), **BENCH})
+        holdings = [
+            {**holding("SHOP.TO", 1), "account": "RRSP"},
+            {**holding("SHOP.TO", 1), "account": "TFSA"},
+            {**holding("XEQT.TO", 10), "account": "TFSA"},
+        ]
+        quotes = {"SHOP.TO": Quote(200, 199, "CAD", quote_type="EQUITY"), "XEQT.TO": Quote(30, 30, "CAD", quote_type="ETF")}
+        figures = figures_for(holdings, quotes, {"CAD": 1})
+
+        by_holding = pa.compute_performance(figures, history, "XIC.TO", "5Y", "Holding")
+        self.assertEqual(list(by_holding.lines.columns), ["SHOP.TO", "XEQT.TO"])  # largest first
+        self.assertAlmostEqual(by_holding.lines["SHOP.TO"].iloc[-1], 200)
+        self.assertAlmostEqual(by_holding.lines["XEQT.TO"].iloc[-1], 100)
+
+        by_account = pa.compute_performance(figures, history, "XIC.TO", "5Y", "Account")
+        self.assertAlmostEqual(by_account.lines["RRSP"].iloc[-1], 200)
+        # TFSA: 100 + 300 at the start, 200 + 300 at the end.
+        self.assertAlmostEqual(by_account.lines["TFSA"].iloc[-1], 500 / 400 * 100)
+
+        by_type = pa.compute_performance(figures, history, "XIC.TO", "5Y", "Type")
+        self.assertEqual(set(by_type.lines.columns), {"Stock", "ETF"})
+
+        plain = pa.compute_performance(figures, history, "XIC.TO", "5Y")
+        self.assertTrue(plain.lines.empty)
+        self.assertIsNone(plain.lines_by)
+
     def test_currency_moves_count_in_base(self):
         # AAPL is flat in USD while USD/CAD rises 10%: a 10% gain in CAD, none in USD.
         history = make_history({"AAPL": flat(100), "USDCAD=X": ramp(1.3, 1.43), "CADUSD=X": 1 / ramp(1.3, 1.43), **BENCH})

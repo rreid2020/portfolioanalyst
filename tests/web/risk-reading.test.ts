@@ -8,7 +8,7 @@ const perf: Performance = {
   portfolioReturn: 14.2, benchmarkReturn: 10.0, annualizedReturn: 14.2, volatility: 15.4, beta: 1.31,
   maxDrawdown: -18.5, drawdownPeak: "2026-02-10", drawdownTrough: "2026-04-08",
   correlation: { tickers: ["A", "B", "C"], matrix: [[1, 0.9, 0.2], [0.9, 1, 0.3], [0.2, 0.3, 1]] },
-  excluded: [], lateStarts: {},
+  excluded: [], lateStarts: {}, lines: { by: null, names: [], leftOut: 0 },
 };
 
 describe("risk readings", () => {
